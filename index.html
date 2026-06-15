@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Energy Auditor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero card">
+      <div>
+        <p class="eyebrow">Tablero estático · GitHub Pages</p>
+        <h1>Smart Energy Auditor</h1>
+        <p class="subtitle">Monitoreo energético, calidad de energía y análisis tarifario</p>
+      </div>
+      <div id="connectionBadge" class="status-badge status-loading">Conectando…</div>
+    </header>
+
+    <section id="errorBanner" class="error-banner hidden" role="alert"></section>
+
+    <section class="grid two-columns">
+      <article class="card connection-panel">
+        <h2>Conexión y configuración</h2>
+        <dl class="data-list">
+          <div><dt>Estado Firebase</dt><dd id="firebaseStatus">sin dato</dd></div>
+          <div><dt>Dispositivo activo</dt><dd>sea_001</dd></div>
+          <div><dt>Perfil activo Firebase</dt><dd id="activeProfileId">sin dato</dd></div>
+          <div><dt>Tipo de usuario</dt><dd id="userType">sin dato</dd></div>
+          <div><dt>Código tarifario</dt><dd id="tariffCode">sin dato</dd></div>
+        </dl>
+      </article>
+
+      <article class="card controls-panel">
+        <h2>Perfil tarifario y simulación</h2>
+        <label class="field-label" for="profileSelector">Perfil tarifario</label>
+        <select id="profileSelector"></select>
+
+        <label class="field-label" for="consumptionInput">Consumo acumulado del período (kWh)</label>
+        <input id="consumptionInput" type="number" min="0" step="1" inputmode="decimal" />
+      </article>
+    </section>
+
+    <section class="grid two-columns">
+      <article id="tierCard" class="card tier-card"></article>
+      <article id="estimatedBill" class="card bill-card"></article>
+    </section>
+
+    <section class="grid two-columns">
+      <article class="card alerts-card">
+        <h2>Alertas</h2>
+        <div id="alertsList" class="alerts-list"></div>
+      </article>
+
+      <article class="card live-card">
+        <div class="card-title-row">
+          <h2>Datos en tiempo real</h2>
+          <span class="refresh-note">Actualiza cada 10 s</span>
+        </div>
+        <div id="livePanel" class="live-grid"></div>
+      </article>
+    </section>
+
+    <p class="disclaimer">Estimación orientativa basada en perfiles tarifarios cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
