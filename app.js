@@ -1,6 +1,6 @@
 const BASE_URL = "https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com";
 const DEVICE_ID = "sea_001";
-const APP_VERSION = "v0.2.0";
+const APP_VERSION = "v0.3.0";
 const APP_VERSION_NUMBER = APP_VERSION.replace(/^v/, "");
 const VERSION_URL = `version.json?v=${APP_VERSION_NUMBER}`;
 const FRONT_LOADED_AT = new Date();
@@ -60,8 +60,12 @@ const readLiveNumber = (...keys) => {
 const toNumber = (value, fallback = null) => isMissing(value) || !Number.isFinite(Number(value)) ? fallback : Number(value);
 
 function getStoredThemePreference() {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  return THEME_OPTIONS.includes(stored) ? stored : "system";
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return THEME_OPTIONS.includes(stored) ? stored : "system";
+  } catch (error) {
+    return "system";
+  }
 }
 
 function getSystemTheme() {
@@ -77,9 +81,12 @@ function applyTheme(preference) {
   const resolvedTheme = resolveTheme(safePreference);
   document.documentElement.dataset.theme = resolvedTheme;
   document.documentElement.dataset.themePreference = safePreference;
+  document.documentElement.style.colorScheme = resolvedTheme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLORS[resolvedTheme]);
   document.querySelectorAll('input[name="themePreference"]').forEach((input) => {
-    input.checked = input.value === safePreference;
+    const isActive = input.value === safePreference;
+    input.checked = isActive;
+    input.closest(".theme-option")?.classList.toggle("active", isActive);
   });
   const status = $("themeStatus");
   if (status) {
@@ -90,7 +97,7 @@ function applyTheme(preference) {
 }
 
 function setThemePreference(preference) {
-  localStorage.setItem(THEME_STORAGE_KEY, preference);
+  try { localStorage.setItem(THEME_STORAGE_KEY, preference); } catch (error) { console.warn("No se pudo guardar la preferencia de tema", error); }
   applyTheme(preference);
 }
 
@@ -811,6 +818,10 @@ function wireUpdateButtons() {
       if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
       const registration = await navigator.serviceWorker?.getRegistration();
       await registration?.update();
+      if ("caches" in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+      }
       window.location.reload();
     });
   });

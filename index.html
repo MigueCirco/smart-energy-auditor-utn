@@ -4,18 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smart Energy Auditor</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.2.0" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.3.0" />
   <meta name="theme-color" content="#f97316" />
   <script>
     (() => {
       const storageKey = "sea-theme-preference";
-      const fallback = "system";
       const validThemes = ["light", "dark", "system"];
-      const stored = localStorage.getItem(storageKey);
-      const preference = validThemes.includes(stored) ? stored : fallback;
-      const resolved = preference === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : preference === "system" ? "light" : preference;
+      const themeColors = { light: "#f97316", dark: "#0f172a" };
+      let stored = "system";
+      try { stored = localStorage.getItem(storageKey) || "system"; } catch (error) { stored = "system"; }
+      const preference = validThemes.includes(stored) ? stored : "system";
+      const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+      const resolved = preference === "system" ? (systemDark ? "dark" : "light") : preference;
       document.documentElement.dataset.theme = resolved;
       document.documentElement.dataset.themePreference = preference;
+      document.documentElement.style.colorScheme = resolved;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColors[resolved]);
     })();
   </script>
   <meta name="mobile-web-app-capable" content="yes" />
@@ -26,7 +30,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png" />
   <link rel="shortcut icon" href="favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=0.2.0" />
+  <link rel="stylesheet" href="styles.css?v=0.3.0" />
 </head>
 <body>
   <main class="app-shell">
@@ -116,9 +120,9 @@
           <p>Elegí cómo querés visualizar el auditor. La preferencia queda guardada en este dispositivo.</p>
           <fieldset class="theme-toggle" aria-label="Selector de tema visual">
             <legend>Tema</legend>
-            <label><input type="radio" name="themePreference" value="light" /> Claro</label>
-            <label><input type="radio" name="themePreference" value="dark" /> Oscuro</label>
-            <label><input type="radio" name="themePreference" value="system" /> Sistema</label>
+            <label class="theme-option"><input type="radio" name="themePreference" value="light" /><span>Claro</span></label>
+            <label class="theme-option"><input type="radio" name="themePreference" value="dark" /><span>Oscuro</span></label>
+            <label class="theme-option"><input type="radio" name="themePreference" value="system" /><span>Sistema</span></label>
           </fieldset>
           <p id="themeStatus" class="theme-status" aria-live="polite">Tema del sistema</p>
         </article>
@@ -147,6 +151,6 @@
     <button id="tab-mas" class="nav-item" data-tab="mas">Más</button>
   </nav>
 
-  <script src="app.js?v=0.2.0"></script>
+  <script src="app.js?v=0.3.0"></script>
 </body>
 </html>
