@@ -79,19 +79,44 @@ function getActiveProfile() {
   return state.profiles?.[state.selectedProfileId] || null;
 }
 
-function getCurrentTier(consumptionKWh, tiers = []) {
-  const normalized = Array.isArray(tiers) ? tiers : Object.values(tiers || {});
-  if (!normalized.length) return null;
-
-  const sorted = normalized
+function normalizeTiers(tiers = []) {
+  return (Array.isArray(tiers) ? tiers : Object.values(tiers || {}))
     .map((tier, index) => ({ ...tier, index }))
     .sort((a, b) => toNumber(a.fromKWh ?? a.minKWh ?? a.from, 0) - toNumber(b.fromKWh ?? b.minKWh ?? b.from, 0));
+}
+
+function getTierName(tier) {
+  return tier?.name || tier?.label || tier?.category || tier?.id || (tier ? `Tramo ${tier.index + 1 || ""}` : "sin dato");
+}
+
+function getTierLimit(tier) {
+  const rawTo = tier?.toKWh ?? tier?.maxKWh ?? tier?.to;
+  return rawTo === null || rawTo === undefined ? Infinity : toNumber(rawTo, 0);
+}
+
+function getCurrentTier(consumptionKWh, tiers = []) {
+  const sorted = normalizeTiers(tiers);
+  if (!sorted.length) return null;
 
   return sorted.find((tier) => {
     const from = toNumber(tier.fromKWh ?? tier.minKWh ?? tier.from, 0);
     const to = tier.toKWh ?? tier.maxKWh ?? tier.to;
     return consumptionKWh >= from && (to === null || to === undefined || consumptionKWh <= Number(to));
   }) || sorted[sorted.length - 1];
+}
+
+function getNextTier(currentTier, tiers) {
+  const sorted = normalizeTiers(tiers);
+  if (!currentTier || !sorted.length) return null;
+
+  const currentIndex = sorted.findIndex((tier) =>
+    tier === currentTier ||
+    tier.id === currentTier.id ||
+    getTierName(tier) === getTierName(currentTier) ||
+    tier.index === currentTier.index
+  );
+
+  return currentIndex >= 0 && currentIndex < sorted.length - 1 ? sorted[currentIndex + 1] : null;
 }
 
 const SUBSIDY_DISCOUNT_ALIASES = [
@@ -171,6 +196,7 @@ function renderProfileSelector() {
   selector.value = state.selectedProfileId || "";
   selector.addEventListener("change", () => {
     state.selectedProfileId = selector.value;
+    $("projectionPanel").innerHTML = "";
     $("consumptionInput").value = INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0;
     renderAll();
   });
@@ -199,6 +225,64 @@ function renderTierCard() {
     </dl>
     <div class="progress-track"><div class="progress-bar ${level}" style="width:${progress}%"></div></div>
   `;
+}
+
+
+function calculateProjection(consumptionKWh, currentTier, profile, elapsedDays, totalDays) {
+  const safeElapsedDays = Math.max(toNumber(elapsedDays, 1), 1);
+  const safeTotalDays = Math.max(toNumber(totalDays, safeElapsedDays), 1);
+  const tiers = profile?.networkChargeTiers || [];
+  const nextTier = getNextTier(currentTier, tiers);
+  const upperLimit = getTierLimit(currentTier);
+  const hasUpperLimit = Number.isFinite(upperLimit);
+  const consumptionDaily = consumptionKWh / safeElapsedDays;
+  const projectedConsumption = consumptionDaily * safeTotalDays;
+  const remainingKWh = hasUpperLimit ? Math.max(upperLimit - consumptionKWh, 0) : null;
+  const daysUntilChange = remainingKWh !== null && consumptionDaily > 0 ? remainingKWh / consumptionDaily : null;
+  const projectedTier = getCurrentTier(projectedConsumption, tiers);
+  const willExceed = hasUpperLimit && projectedConsumption > upperLimit;
+  const status = willExceed && daysUntilChange !== null && daysUntilChange <= Math.max(safeTotalDays - safeElapsedDays, 0)
+    ? "critical"
+    : willExceed ? "warning" : "ok";
+
+  return {
+    currentTier,
+    nextTier,
+    upperLimit,
+    hasUpperLimit,
+    remainingKWh,
+    consumptionDaily,
+    projectedConsumption,
+    projectedTier,
+    willExceed,
+    daysUntilChange,
+    status,
+  };
+}
+
+function calculateSavingsScenario(consumptionKWh, profile, elapsedDays, totalDays, reductionPercent) {
+  const currentTier = getCurrentTier(consumptionKWh, profile?.networkChargeTiers);
+  const baseProjection = calculateProjection(consumptionKWh, currentTier, profile, elapsedDays, totalDays);
+  const reduction = Math.min(Math.max(toNumber(reductionPercent, 0), 0), 100);
+  const savedKWh = baseProjection.projectedConsumption * (reduction / 100);
+  const reducedConsumption = Math.max(baseProjection.projectedConsumption - savedKWh, 0);
+  const baseTier = getCurrentTier(baseProjection.projectedConsumption, profile?.networkChargeTiers);
+  const reducedTier = getCurrentTier(reducedConsumption, profile?.networkChargeTiers);
+  const baseBill = calculateEstimatedBill(baseProjection.projectedConsumption, profile || {}, baseTier || {});
+  const reducedBill = calculateEstimatedBill(reducedConsumption, profile || {}, reducedTier || {});
+
+  return {
+    reductionPercent: reduction,
+    savedKWh,
+    baseConsumption: baseProjection.projectedConsumption,
+    reducedConsumption,
+    baseTier,
+    reducedTier,
+    baseCost: baseBill.total,
+    reducedCost: reducedBill.total,
+    savingsARS: Math.max(baseBill.total - reducedBill.total, 0),
+    avoidedTierChange: getTierName(baseTier) !== getTierName(reducedTier),
+  };
 }
 
 function renderEstimatedBill() {
@@ -230,6 +314,71 @@ function renderEstimatedBill() {
         <div><dt>kWh subsidiados</dt><dd>${hasProfile ? `${number.format(bill.subsidy.subsidizedKWh)} kWh` : "sin dato"}</dd></div>
       </dl>
     </details>`;
+}
+
+
+function getDefaultTotalDays(profile) {
+  const periodType = profile?.periodType || profile?.billingPeriod || state.billing?.periodType;
+  return periodType === "monthly" ? 30 : 60;
+}
+
+
+function renderProjectionPanel() {
+  const profile = getActiveProfile();
+  const consumption = toNumber($('consumptionInput').value, 0);
+  const currentTier = getCurrentTier(consumption, profile?.networkChargeTiers);
+  const hasExistingInputs = Boolean($('elapsedDaysInput'));
+  const defaultTotalDays = getDefaultTotalDays(profile);
+  const elapsedDays = hasExistingInputs ? toNumber($('elapsedDaysInput').value, Math.ceil(defaultTotalDays / 2)) : Math.ceil(defaultTotalDays / 2);
+  const totalDays = hasExistingInputs ? toNumber($('totalDaysInput').value, defaultTotalDays) : defaultTotalDays;
+  const reductionPercent = hasExistingInputs ? toNumber($('reductionInput').value, 10) : 10;
+  const projection = calculateProjection(consumption, currentTier, profile || {}, elapsedDays, totalDays);
+  const savings = calculateSavingsScenario(consumption, profile || {}, elapsedDays, totalDays, reductionPercent);
+  const currentName = getTierName(currentTier);
+  const nextName = projection.nextTier ? getTierName(projection.nextTier) : 'Última categoría';
+  const statusMessage = projection.status === 'critical'
+    ? 'La proyección indica que superarías la categoría actual antes del cierre del período.'
+    : projection.status === 'warning'
+      ? `Al ritmo actual, podrías pasar a ${nextName} en aproximadamente ${number.format(projection.daysUntilChange || 0)} días.`
+      : `Con el ritmo actual, se estima cerrar el período dentro de la categoría ${currentName}.`;
+
+  $('projectionPanel').innerHTML = `
+    <div class="card-title-row">
+      <h2>Proyección y alertas de escala</h2>
+      <span class="projection-status ${projection.status}">${projection.status === 'ok' ? 'Normal' : projection.status === 'warning' ? 'Advertencia' : 'Riesgo crítico'}</span>
+    </div>
+
+    <div class="projection-controls">
+      <label class="field-label" for="elapsedDaysInput">Días transcurridos del período</label>
+      <input id="elapsedDaysInput" type="number" min="1" step="1" inputmode="numeric" value="${Math.max(elapsedDays, 1)}" />
+      <label class="field-label" for="totalDaysInput">Días totales del período</label>
+      <input id="totalDaysInput" type="number" min="1" step="1" inputmode="numeric" value="${Math.max(totalDays, 1)}" />
+      <label class="field-label" for="reductionInput">Reducción esperada (%)</label>
+      <input id="reductionInput" type="number" min="0" max="100" step="1" inputmode="decimal" value="${savings.reductionPercent}" />
+    </div>
+
+    <div class="projection-grid">
+      <div class="projection-box"><span>Categoría actual</span><strong>${currentName}</strong></div>
+      <div class="projection-box"><span>Próxima categoría</span><strong>${nextName}</strong></div>
+      <div class="projection-box"><span>kWh restantes antes de cambiar</span><strong>${projection.remainingKWh === null ? 'sin límite' : `${number.format(projection.remainingKWh)} kWh`}</strong></div>
+      <div class="projection-box"><span>Consumo diario promedio</span><strong>${number.format(projection.consumptionDaily)} kWh/día</strong></div>
+    </div>
+
+    <div class="alert ${projection.status}">${statusMessage}</div>
+
+    <div class="savings-grid">
+      <div class="bill-line"><span class="label">Consumo proyectado sin ahorro</span><strong>${number.format(savings.baseConsumption)} kWh</strong></div>
+      <div class="bill-line"><span class="label">Costo proyectado sin ahorro</span><strong>${money.format(savings.baseCost)}</strong></div>
+      <div class="bill-line"><span class="label">Consumo proyectado con reducción</span><strong>${number.format(savings.reducedConsumption)} kWh</strong></div>
+      <div class="bill-line"><span class="label">Costo proyectado con reducción</span><strong>${money.format(savings.reducedCost)}</strong></div>
+      <div class="bill-line total"><span>Ahorro económico aproximado</span><strong>${money.format(savings.savingsARS)}</strong></div>
+    </div>
+
+    ${savings.avoidedTierChange ? `<div class="alert ok">Cambio de categoría evitado: bajarías de ${getTierName(savings.baseTier)} a ${getTierName(savings.reducedTier)} con la reducción simulada.</div>` : ''}
+    <p class="projection-note">La proyección depende del consumo registrado hasta el momento y puede variar si cambian los hábitos de uso o las condiciones de medición.</p>
+  `;
+
+  ['elapsedDaysInput', 'totalDaysInput', 'reductionInput'].forEach((id) => $(id).addEventListener('input', renderProjectionPanel));
 }
 
 function renderAlerts() {
@@ -278,6 +427,7 @@ function renderAll() {
   renderConnectionPanel();
   renderTierCard();
   renderEstimatedBill();
+  renderProjectionPanel();
   renderAlerts();
   renderLivePanel();
 }

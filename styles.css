@@ -119,3 +119,21 @@ select:focus, input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px va
   border-radius: 14px;
   background: rgba(255,255,255,.035);
 }
+
+.projection-card { display: grid; gap: 18px; }
+.projection-status { border-radius: 999px; padding: 8px 12px; font-weight: 800; font-size: .85rem; }
+.projection-status.ok { background: rgba(52,211,153,.16); color: var(--green); }
+.projection-status.warning { background: rgba(250,204,21,.16); color: var(--yellow); }
+.projection-status.critical { background: rgba(248,113,113,.16); color: var(--red); }
+.projection-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; align-items: end; }
+.projection-controls .field-label { margin: 0 0 -2px; }
+.projection-grid, .savings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.projection-box, .savings-grid .bill-line { background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 14px; }
+.projection-box { display: grid; gap: 8px; }
+.projection-box span { color: var(--muted); }
+.projection-box strong { font-size: 1.35rem; color: var(--text); }
+.projection-note { margin: 0; color: #bae6fd; background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.28); border-radius: 14px; padding: 12px 14px; }
+
+@media (max-width: 760px) {
+  .projection-controls, .projection-grid, .savings-grid { grid-template-columns: 1fr; }
+}
