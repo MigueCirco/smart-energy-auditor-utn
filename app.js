@@ -94,15 +94,54 @@ function getCurrentTier(consumptionKWh, tiers = []) {
   }) || sorted[sorted.length - 1];
 }
 
+const SUBSIDY_DISCOUNT_ALIASES = [
+  "discountARSperKWh",
+  "discountArsPerKwh",
+  "discountARSpKWh",
+  "discountARSPerKWh",
+  "discountARSPerKwh",
+  "discountArsPerKWh",
+  "discountARSperKwh",
+  "discountARSPerkWh",
+  "discountARSperkWh",
+];
+
+function detectSubsidyDiscount(subsidy = {}) {
+  const detectedField = SUBSIDY_DISCOUNT_ALIASES.find((field) => subsidy[field] !== undefined && subsidy[field] !== null && subsidy[field] !== "");
+  return {
+    detectedField: detectedField || null,
+    discountARSperKWh: detectedField ? Math.abs(toNumber(subsidy[detectedField], 0)) : 0,
+  };
+}
+
+function getSubsidyDetails(consumptionKWh, profile) {
+  const subsidyConfig = profile?.subsidy || {};
+  const { detectedField, discountARSperKWh } = detectSubsidyDiscount(subsidyConfig);
+  const limitKWh = toNumber(subsidyConfig.limitKWh, 0);
+  const enabled = Boolean(subsidyConfig.enabled);
+  const subsidizedKWh = enabled && discountARSperKWh > 0 && limitKWh > 0
+    ? Math.min(consumptionKWh, limitKWh)
+    : 0;
+  const amount = subsidizedKWh * discountARSperKWh;
+
+  return {
+    enabled,
+    detectedField,
+    discountARSperKWh,
+    limitKWh,
+    subsidizedKWh,
+    amount,
+    applies: enabled && amount > 0,
+  };
+}
+
 function calculateEstimatedBill(consumptionKWh, profile, tier) {
   const energyRate = toNumber(profile?.energyChargeARSperKWh ?? profile?.energyCharge, 0);
   const grossEnergy = consumptionKWh * energyRate;
-  const subsidyRateRaw = toNumber(profile?.subsidy?.percentage ?? profile?.subsidy?.rate ?? 0, 0);
-  const subsidyRate = subsidyRateRaw > 1 ? subsidyRateRaw / 100 : subsidyRateRaw;
-  const subsidy = profile?.subsidy?.enabled ? grossEnergy * subsidyRate : 0;
+  const subsidy = getSubsidyDetails(consumptionKWh, profile);
   const networkCharge = toNumber(tier?.chargeARS ?? tier?.fixedChargeARS ?? tier?.networkChargeARS ?? tier?.amountARS, 0);
   const otherCharges = Object.values(profile?.otherCharges || {}).reduce((sum, charge) => sum + toNumber(typeof charge === "object" ? charge.amountARS ?? charge.value : charge, 0), 0);
-  const subtotal = grossEnergy - subsidy + networkCharge + otherCharges;
+  const subtotal = grossEnergy - subsidy.amount + networkCharge + otherCharges;
   return { grossEnergy, subsidy, networkCharge, otherCharges, subtotal, total: subtotal };
 }
 
@@ -174,12 +213,23 @@ function renderEstimatedBill() {
     <p class="calculation-warning">Estimación orientativa basada en perfiles tarifarios cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
     <div class="bill-lines">
       <div class="bill-line"><span class="label">Cargo de energía bruto</span><strong>${moneyOrFallback(bill.grossEnergy)}</strong></div>
-      <div class="bill-line"><span class="label">Subsidio estimado</span><strong>${hasProfile ? `-${money.format(bill.subsidy)}` : "sin dato"}</strong></div>
+      <div class="bill-line"><span class="label">Subsidio estimado</span><strong>${hasProfile ? `-${money.format(bill.subsidy.amount)}` : "sin dato"}</strong></div>
+      <div class="bill-line"><span class="label">Detalle subsidio</span><strong>${hasProfile && bill.subsidy.applies ? `${number.format(bill.subsidy.subsidizedKWh)} kWh × ${money.format(bill.subsidy.discountARSperKWh)}/kWh` : "No aplica"}</strong></div>
       <div class="bill-line"><span class="label">Cargo de red</span><strong>${moneyOrFallback(bill.networkCharge)}</strong></div>
       <div class="bill-line"><span class="label">Otros cargos fijos</span><strong>${moneyOrFallback(bill.otherCharges)}</strong></div>
       <div class="bill-line"><span class="label">Subtotal aproximado</span><strong>${moneyOrFallback(bill.subtotal)}</strong></div>
       <div class="bill-line total"><span>Total aproximado</span><strong>${moneyOrFallback(bill.total)}</strong></div>
-    </div>`;
+    </div>
+    <details class="diagnostics-panel">
+      <summary>Diagnóstico de subsidio</summary>
+      <dl class="data-list diagnostics-list">
+        <div><dt>activeProfileId</dt><dd>${valueOrFallback(state.selectedProfileId)}</dd></div>
+        <div><dt>Campo detectado</dt><dd>${hasProfile ? valueOrFallback(bill.subsidy.detectedField, "") : "sin dato"}</dd></div>
+        <div><dt>Descuento usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.discountARSperKWh)} $/kWh` : "sin dato"}</dd></div>
+        <div><dt>limitKWh usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.limitKWh)} kWh` : "sin dato"}</dd></div>
+        <div><dt>kWh subsidiados</dt><dd>${hasProfile ? `${number.format(bill.subsidy.subsidizedKWh)} kWh` : "sin dato"}</dd></div>
+      </dl>
+    </details>`;
 }
 
 function renderAlerts() {
