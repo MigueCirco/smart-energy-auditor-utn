@@ -36,6 +36,7 @@ h3 { margin: 0 0 8px; font-size: 1rem; }
 .metric-hero { margin: 0; color: var(--orange); font-size: 2.8rem; font-weight: 950; letter-spacing: -.06em; }
 .general-status { align-self: center; border-radius: 18px; padding: 12px; font-weight: 900; text-align: center; }
 .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.quality-layout { gap: 14px; margin-top: 16px; }
 .mini-card { min-height: 104px; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
 .mini-card.wide { grid-column: 1 / -1; }
 .mini-card span, dt, .label, .live-label, .field-label { color: var(--muted); }
@@ -55,6 +56,7 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .progress-bar.critical { background: linear-gradient(90deg, var(--orange), var(--red)); }
 .metric-large { font-size: 2rem; font-weight: 950; color: var(--orange); margin: 0 0 8px; }
 .calculation-warning, .projection-note, .info-card { color: #6b4a19; background: #fff8e8; border: 1px solid #ffe2b8; border-radius: 16px; padding: 12px 14px; }
+.quality-info-card { grid-column: 1 / -1; margin-top: 4px; box-shadow: none; line-height: 1.45; }
 .bill-lines, .alerts-list, .more-list { display: grid; gap: 12px; }
 .bill-line.total { margin-top: 8px; padding-top: 12px; border-top: 1px solid #edf0f4; font-size: 1.12rem; font-weight: 900; color: var(--orange); }
 .alert { border-radius: 16px; padding: 12px 14px; border: 1px solid transparent; }
@@ -82,7 +84,7 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .diagnostics-list { margin-top: 12px; padding: 12px; border-radius: 14px; background: #f8fafc; }
 @media (min-width: 760px) { .app-shell, .bottom-nav { width: min(520px, 100%); } body { background-attachment: fixed; } }
 @media (max-width: 380px) { .metric-grid { grid-template-columns: 1fr; } .mini-card.wide { grid-column: auto; } .nav-item { font-size: .68rem; padding-inline: 2px; } .metric-hero { font-size: 2.25rem; } }
-.quality-table-card { overflow-x: auto; }
+.quality-table-card { overflow-x: auto; margin-top: 2px; }
 .quality-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .9rem; }
 .quality-table th, .quality-table td { padding: 10px 8px; border-bottom: 1px solid #edf0f4; text-align: right; white-space: nowrap; }
 .quality-table th:first-child, .quality-table td:first-child { text-align: left; }
@@ -91,15 +93,15 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .diagnostic-json-section h3 { color: var(--text); margin-bottom: 8px; }
 .diagnostic-json { margin: 0; max-height: 260px; overflow: auto; padding: 12px; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-size: .78rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 
-.quality-card { position: relative; overflow: hidden; }
+.quality-card { position: relative; overflow: hidden; min-height: 112px; }
 .quality-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--orange); }
-.quality-card small { color: var(--muted); font-weight: 800; text-transform: capitalize; }
+.quality-card small { color: var(--muted); font-weight: 800; }
 .quality-normal::before, .quality-ok::before { background: var(--green); }
 .quality-warning::before { background: var(--orange); }
 .quality-critical::before { background: var(--red); }
 .quality-info::before { background: var(--blue); }
 .quality-unknown::before, .quality-loading::before { background: #94a3b8; }
-.spectrum-card { gap: 14px; }
+.spectrum-card { gap: 16px; margin-top: 2px; background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%); }
 .harmonic-spectrum { display: grid; gap: 12px; width: 100%; }
 .spectrum-row { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: center; padding: 10px; border: 1px solid #edf0f4; border-radius: 16px; background: #f8fafc; }
 .spectrum-label { color: var(--text); font-weight: 950; text-align: center; }
@@ -119,7 +121,9 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .update-banner button, .secondary-button { border: 0; border-radius: 14px; background: var(--blue); color: #fff; font: inherit; font-size: .82rem; font-weight: 900; padding: 10px 12px; cursor: pointer; }
 .secondary-button { width: 100%; margin-top: 12px; background: var(--orange); }
 .spectrum-scale-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.spectrum-scale-list span { border-radius: 999px; background: #eef6ff; color: var(--blue); padding: 7px 10px; font-size: .78rem; font-weight: 900; }
+.spectrum-scale-list span { border-radius: 999px; padding: 7px 10px; font-size: .78rem; font-weight: 900; border: 1px solid transparent; }
+.spectrum-scale-list .scale-voltage { background: #eef6ff; border-color: #cfe3ff; color: var(--blue); }
+.spectrum-scale-list .scale-current { background: var(--orange-soft); border-color: #fed7aa; color: var(--orange); }
 .spectrum-note { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.35; }
 .spectrum-bar-line.out-of-scale .spectrum-track { outline: 2px solid #fed7c7; outline-offset: 2px; }
 .spectrum-bar-line strong em { display: block; color: var(--red); font-size: .68rem; font-style: normal; font-weight: 950; line-height: 1.1; text-transform: uppercase; }

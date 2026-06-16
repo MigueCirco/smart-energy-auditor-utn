@@ -445,6 +445,15 @@ function renderConsumptionPanel() {
   $("consumptionCards").innerHTML = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
 }
 
+function getQualityReadingLabel(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["sin dato", "unknown", "loading"].includes(normalized)) return "Lectura ESP32: sin dato";
+  if (["normal", "ok", "acceptable", "aceptable", "valid", "valida", "válida"].includes(normalized)) return "Lectura ESP32: válida";
+  if (["warning", "revisar", "review"].includes(normalized)) return "Lectura ESP32: revisar";
+  if (["critical", "critico", "crítico"].includes(normalized)) return "Lectura ESP32: crítica";
+  return `Lectura ESP32: ${status}`;
+}
+
 function renderQualityPanel() {
   const firmwareStatus = hasLiveValue("pq.status") ? getLiveValue("pq.status") : "sin dato";
   const calculatedStatus = getQualityStatus();
@@ -460,7 +469,7 @@ function renderQualityPanel() {
     ["THD tensión", formatMeasurement(thdV, "%"), thdVStatus.label, thdVStatus.level],
     ["THD corriente", formatMeasurement(thdI, "%"), thdIStatus.label, thdIStatus.level],
     ["Frecuencia fundamental", formatMeasurement(fundamental, " Hz"), "referencia", "info"],
-    ["Estado de calidad", calculatedStatus, `Firmware: ${firmwareStatus}`, getQualityStatusClass(calculatedStatus).replace("status-", "")],
+    ["Estado de calidad", calculatedStatus, getQualityReadingLabel(firmwareStatus), getQualityStatusClass(calculatedStatus).replace("status-", "")],
   ];
   const cards = cardItems.map(([label, value, badge, level]) => `
     <article class="card mini-card quality-card quality-${level}">
@@ -482,10 +491,11 @@ function renderQualityPanel() {
     const isOutOfScale = numericValue > scaleMax;
     return `<div class="spectrum-bar-line ${isOutOfScale ? "out-of-scale" : ""}"><span>${label}</span><div class="spectrum-track"><div class="spectrum-bar ${type}" style="width:${widthPercent}%"></div></div><strong>${formatMeasurement(value, "%")}${isOutOfScale ? '<em>fuera de escala</em>' : ""}</strong></div>`;
   };
+  const harmonicsInfo = `<article class="card info-card quality-info-card">Las armónicas se muestran desde la 2ª hasta la 19ª. La fundamental de 50 Hz se usa como referencia y no se lista como armónica de distorsión.</article>`;
   const spectrum = rowCount > 0
     ? `<article class="card mini-card wide spectrum-card">
       <span>Espectro armónico</span>
-      <div class="spectrum-scale-list"><span>Escala tensión: 0–${HARMONIC_SCALES.voltage}%</span><span>Escala corriente: 0–${HARMONIC_SCALES.current}%</span></div>
+      <div class="spectrum-scale-list"><span class="scale-voltage">Escala tensión: 0–${HARMONIC_SCALES.voltage}%</span><span class="scale-current">Escala corriente: 0–${HARMONIC_SCALES.current}%</span></div>
       <p class="spectrum-note">Las barras están escaladas para facilitar la lectura visual. El valor numérico mostrado es el dato real medido.</p>
       <div class="harmonic-spectrum">${harmonicsRows.map(({ harmonicNumber, voltage, current }) => `
       <div class="spectrum-row">
@@ -500,7 +510,7 @@ function renderQualityPanel() {
     ? `<article class="card mini-card wide quality-table-card"><span>Tabla de armónicas</span><table class="quality-table"><thead><tr><th>Armónica</th><th>Frecuencia</th><th>Tensión %</th><th>Corriente %</th></tr></thead><tbody>${harmonicsRows.map(({ harmonicNumber, frequency, voltage, current }) => `
       <tr><td>${formatHarmonicLabel(harmonicNumber)}</td><td>${formatFrequencyHz(frequency)}</td><td>${formatMeasurement(voltage, "%")}</td><td>${formatMeasurement(current, "%")}</td></tr>`).join("")}</tbody></table></article>`
     : `<article class="card mini-card wide"><span>Tabla de armónicas</span><strong>sin dato</strong></article>`;
-  $("qualityPanel").innerHTML = cards + spectrum + harmonicsTable;
+  $("qualityPanel").innerHTML = cards + harmonicsInfo + spectrum + harmonicsTable;
 }
 
 function renderHistoryPanel() {
@@ -739,13 +749,11 @@ function updateConnectionStatus() {
 }
 
 function showUpdateNotice() {
-  const banner = $("updateBanner");
-  if (!banner) return;
-  banner.classList.remove("hidden");
+  // La actualización automática sigue disponible, pero el aviso superior se mantiene oculto.
 }
 
 function wireUpdateButtons() {
-  ["updateAppButton", "manualUpdateButton"].forEach((id) => {
+  ["manualUpdateButton"].forEach((id) => {
     const button = $(id);
     if (!button) return;
     button.addEventListener("click", async () => {
