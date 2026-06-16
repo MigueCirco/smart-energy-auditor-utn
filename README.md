@@ -48,7 +48,7 @@ https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com/devices/sea_001/l
 
 La app usa `service-worker.js` para mantener una copia local de los archivos principales y permitir que la PWA instalada cargue incluso si la red falla momentáneamente. El service worker usa una estrategia **network-first**: intenta obtener primero `index.html`, `app.js`, `styles.css`, `manifest.webmanifest`, los íconos y la navegación desde GitHub Pages, y solo usa caché como respaldo.
 
-El front también consulta `version.json` con `fetch(..., { cache: "no-store" })` y busca actualizaciones automáticamente al cargar y luego cada 5 minutos. Si detecta una versión nueva, muestra el aviso **Nueva versión disponible**.
+El front también consulta `version.json` con `fetch(..., { cache: "no-store" })` y busca actualizaciones automáticamente al cargar y luego cada 5 minutos. Para evitar banners persistentes en la pantalla principal, las actualizaciones se gestionan desde el botón discreto **Actualizar app** en la sección **Más**.
 
 Si el usuario ve datos o pantallas viejas en la app instalada, puede entrar a la sección **Más** y tocar **Actualizar app**. En casos extremos, borrar el acceso instalado del celular y volver a agregarlo desde el navegador.
 
