@@ -315,3 +315,29 @@ html, body, .card, .bottom-nav, .nav-item, .status-badge, .pill, .alert, input, 
 
 @media (min-width: 760px) { .app-shell, .bottom-nav { width: min(540px, 100%); } body { background-attachment: fixed; } .hero-card { grid-template-columns: 1fr auto; align-items: end; } .general-status { justify-self: end; } .spectrum-row { grid-template-columns: 56px 1fr; padding: 12px; } .spectrum-bar-line { grid-template-columns: 82px minmax(120px, 1fr) 86px; } }
 @media (max-width: 380px) { .metric-grid { grid-template-columns: 1fr; } .mini-card.wide, .large-cards .mini-card:nth-child(1), .large-cards .mini-card:nth-child(4), .large-cards .mini-card:nth-child(6) { grid-column: auto; } .nav-item { font-size: .65rem; padding-inline: 2px; } .metric-hero { font-size: 2.25rem; } .app-shell { padding-inline: 10px; } }
+
+.segmented-control { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: var(--space-3); padding: 5px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-soft); }
+.segmented-control.compact { grid-template-columns: repeat(3, 1fr); }
+.segmented-control button { border: 1px solid transparent; border-radius: calc(var(--radius-md) - 6px); padding: 12px 8px; color: var(--color-text-soft); background: transparent; font-weight: 950; cursor: pointer; }
+.segmented-control button.active { color: #fff; background: var(--color-brand); border-color: var(--color-brand); box-shadow: 0 10px 22px var(--color-brand-glow); }
+.segmented-control button:focus-visible { outline: 3px solid var(--color-brand-glow); outline-offset: 2px; }
+.subsidy-selector { margin-top: var(--space-4); }
+.tariff-selector-card { display: grid; gap: var(--space-3); }
+.bill-education-grid { display: grid; gap: var(--space-3); }
+.bill-section-card { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-soft); }
+.bill-section-card summary { cursor: pointer; color: var(--color-text); font-size: var(--font-lg); font-weight: 950; }
+.bill-section-card h2, .bill-section-card h3 { margin: 0; }
+.formula { margin: 0; padding: 14px; border-radius: var(--radius-md); background: var(--color-blue-soft); color: var(--color-blue); border: 1px solid var(--color-blue-border); font-size: 1.04rem; line-height: 1.35; font-weight: 950; font-variant-numeric: tabular-nums; }
+.formula.discount { background: var(--color-green-soft); color: var(--color-green); border-color: var(--color-green-border); }
+.bill-total-card { display: grid; gap: var(--space-4); padding: var(--space-5); border-radius: var(--radius-lg); background: var(--featured-card-background); border: 1px solid var(--color-brand-border); box-shadow: var(--shadow-brand); }
+.bill-total-card .bill-line.total { font-size: 1.24rem; }
+.bill-total-card .bill-line.total strong { font-size: 1.45rem; }
+html, body, .card, .bottom-nav, .nav-item, .status-badge, .pill, .alert, input, select, .projection-box, .spectrum-row, .theme-option, .segmented-control, .segmented-control button, .bill-section-card, .bill-total-card {
+  transition: background-color .22s ease, background .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+
+@media (min-width: 760px) {
+  .bill-education-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bill-total-card, .bill-section-card.alerts-list { grid-column: 1 / -1; }
+}
+@media (max-width: 380px) { .segmented-control, .segmented-control.compact { grid-template-columns: 1fr; } }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smart Energy Auditor</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.3.0" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.4.0" />
   <meta name="theme-color" content="#f97316" />
   <script>
     (() => {
@@ -30,7 +30,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png" />
   <link rel="shortcut icon" href="favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=0.3.0" />
+  <link rel="stylesheet" href="styles.css?v=0.4.0" />
 </head>
 <body>
   <main class="app-shell">
@@ -85,20 +85,32 @@
     </section>
 
     <section id="tarifas" class="tab-panel" aria-labelledby="tab-tarifas">
-      <div class="section-heading"><p class="eyebrow">Tarifas</p><h2>Análisis tarifario y subsidios</h2></div>
-      <article class="card controls-panel">
-        <label class="field-label" for="profileSelector">Perfil tarifario</label>
-        <select id="profileSelector"></select>
+      <div class="section-heading"><p class="eyebrow">Tarifas</p><h2>Tarifas y factura</h2><p class="subtitle">Entendé qué pagás, qué depende del consumo y qué cargos son fijos o por escala.</p></div>
+      <article class="card controls-panel tariff-selector-card">
+        <h2>Tipo de usuario</h2>
+        <div id="userTypeSelector" class="segmented-control" role="group" aria-label="Tipo de usuario">
+          <button type="button" data-user-type="residential">Residencial</button>
+          <button type="button" data-user-type="business">Empresa / Comercio</button>
+        </div>
+        <div id="residentialSubsidySelector" class="subsidy-selector">
+          <label class="field-label">Subsidio residencial</label>
+          <div class="segmented-control compact" role="group" aria-label="Subsidio residencial">
+            <button type="button" data-subsidy="n3">N3</button>
+            <button type="button" data-subsidy="n2">N2</button>
+            <button type="button" data-subsidy="none">Sin subsidio</button>
+          </div>
+        </div>
+        <div id="businessSubsidyNotice" class="alert info hidden">Subsidio residencial: no aplica</div>
         <label class="field-label" for="consumptionInput">Consumo acumulado del período (kWh)</label>
         <input id="consumptionInput" type="number" min="0" step="1" inputmode="decimal" />
       </article>
       <div class="grid two-columns">
-        <article class="card"><h2>Datos del perfil</h2><dl class="data-list"><div><dt>Tipo de usuario</dt><dd id="userType">sin dato</dd></div><div><dt>Código tarifario</dt><dd id="tariffCode">sin dato</dd></div><div><dt>Perfil activo Firebase</dt><dd id="activeProfileId">sin dato</dd></div></dl></article>
+        <article class="card"><h2>Configuración del perfil</h2><dl class="data-list"><div><dt>Tipo de usuario</dt><dd id="userType">sin dato</dd></div><div><dt>Código tarifario</dt><dd id="tariffCode">sin dato</dd></div><div><dt>Período</dt><dd id="periodType">sin dato</dd></div><div><dt>Perfil activo Firebase</dt><dd id="activeProfileId">sin dato</dd></div></dl></article>
         <article id="tierCard" class="card tier-card"></article>
       </div>
       <article id="projectionPanel" class="card projection-card"></article>
-      <article id="tariffDiagnostics" class="card diagnostics-card"></article>
       <article id="estimatedBill" class="card bill-card"></article>
+      <article id="tariffDiagnostics" class="card diagnostics-card"></article>
     </section>
 
     <section id="calidad" class="tab-panel" aria-labelledby="tab-calidad">
@@ -151,6 +163,6 @@
     <button id="tab-mas" class="nav-item" data-tab="mas">Más</button>
   </nav>
 
-  <script src="app.js?v=0.3.0"></script>
+  <script src="app.js?v=0.4.0"></script>
 </body>
 </html>

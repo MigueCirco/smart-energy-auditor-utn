@@ -30,6 +30,18 @@ https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com/tariffProfiles.js
 https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com/devices/sea_001/live.json
 ```
 
+## Módulo de facturación
+
+La pantalla **Tarifas y factura** organiza el cálculo alrededor de dos tipos de usuario fáciles de entender: **Residencial** y **Empresa / Comercio**. Los IDs internos de Firebase se mantienen por compatibilidad, pero el usuario primero elige el tipo de suministro y, solo en Residencial, selecciona el subsidio correspondiente: N3, N2 o sin subsidio.
+
+- **Cargo de energía**: es la parte proporcional al consumo. Se calcula como kWh del período por el precio de energía del perfil tarifario.
+- **Cargo de red por categoría**: depende del tramo de consumo del período. No aumenta kWh por kWh, sino que cambia cuando el consumo pasa de una categoría a otra.
+- **Subsidio residencial**: reduce una parte del cargo de energía hasta un límite de kWh definido para N2 o N3. El consumo que supera ese límite se estima sin descuento. En Empresa / Comercio no aplica subsidio residencial.
+- **Impuestos y tasas**: se muestran separados por tipo de usuario. Algunos porcentajes de referencia, como IVA o percepción de ingresos brutos para comercio, pueden estimarse; otros conceptos quedan configurables si no hay datos oficiales en la referencia.
+- **Cargos no modelados**: recargos punitorios, deudas anteriores, ajustes especiales, tasas municipales o cargos regulados pueden aparecer en la factura sin depender directamente de la medición instantánea del auditor. Cuando falta un dato exacto, la app muestra "Configurable" o "No disponible en factura de referencia" en lugar de inventar valores.
+
+La estimación es orientativa y ayuda a entender qué conceptos componen la factura. No reemplaza la liquidación oficial de la distribuidora.
+
 ## Cómo activar GitHub Pages
 
 1. Subir estos archivos a la rama principal del repositorio.
@@ -55,7 +67,7 @@ Si el usuario ve datos o pantallas viejas en la app instalada, puede entrar a la
 ## Limitaciones actuales
 
 - Los datos dependen de que Firebase Realtime Database permita lectura pública de los nodos utilizados.
-- El perfil tarifario seleccionado se cambia solo en memoria del navegador.
+- El perfil tarifario visual se guarda en `localStorage` y no escribe cambios en Firebase.
 - El cálculo económico es aproximado y no reemplaza la liquidación oficial de la distribuidora.
 - No hay autenticación ni reglas de seguridad endurecidas para un entorno productivo.
 - No incluye gráficas históricas ni persistencia local avanzada.
