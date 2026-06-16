@@ -20,6 +20,9 @@ const state = {
   billing: null,
   profiles: {},
   live: null,
+  liveSignature: null,
+  lastLiveChangeAt: null,
+  lastLiveFetchAt: null,
   selectedProfileId: null,
   failedRequests: new Set(),
 };
@@ -30,10 +33,14 @@ const CO2_KG_PER_KWH = 0.4;
 
 const $ = (id) => document.getElementById(id);
 const valueOrFallback = (value, suffix = "") => value === null || value === undefined || value === "" ? "sin dato" : `${value}${suffix}`;
+const getLiveValue = (path, fallback = null) => path.split(".").reduce((current, key) => current?.[key], state.live) ?? fallback;
+const hasLiveValue = (path) => getLiveValue(path, null) !== null && getLiveValue(path, null) !== undefined && getLiveValue(path, null) !== "";
+const readLivePathNumber = (path, fallback = null) => toNumber(getLiveValue(path, null), fallback);
+const formatDateTime = (date) => date ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "medium" }).format(date) : "sin dato";
 const formatMeasurement = (value, suffix = "") => value === null || value === undefined || value === "" || Number.isNaN(Number(value)) ? "sin dato" : `${number.format(Number(value))}${suffix}`;
 const readLiveNumber = (...keys) => {
-  const key = keys.find((candidate) => state.live?.[candidate] !== undefined && state.live?.[candidate] !== null && state.live?.[candidate] !== "");
-  return key ? toNumber(state.live[key], null) : null;
+  const key = keys.find((candidate) => getLiveValue(candidate) !== undefined && getLiveValue(candidate) !== null && getLiveValue(candidate) !== "");
+  return key ? toNumber(getLiveValue(key), null) : null;
 };
 const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -71,7 +78,14 @@ async function loadTariffProfiles() {
 
 async function loadLiveData() {
   try {
-    state.live = await fetchJSON(LIVE_URL) || {};
+    const live = await fetchJSON(LIVE_URL) || {};
+    const signature = JSON.stringify({ server_ms: live.server_ms, uptime_ms: live.uptime_ms });
+    state.live = live;
+    state.lastLiveFetchAt = Date.now();
+    if (signature !== state.liveSignature) {
+      state.liveSignature = signature;
+      state.lastLiveChangeAt = Date.now();
+    }
     updateConnectionStatus();
   } catch (error) {
     state.live = null;
@@ -294,7 +308,7 @@ function calculateSavingsScenario(consumptionKWh, profile, elapsedDays, totalDay
 function getAuditorMetrics() {
   const profile = getActiveProfile();
   const inputConsumption = toNumber($("consumptionInput")?.value, INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0);
-  const energy = readLiveNumber("energy_kwh", "kwh", "energy_total_kwh", "active_energy_kwh") ?? inputConsumption;
+  const energy = readLivePathNumber("energy.kwh_total", null) ?? readLiveNumber("energy_kwh", "kwh", "energy_total_kwh", "active_energy_kwh") ?? inputConsumption;
   const tier = getCurrentTier(energy, profile?.networkChargeTiers);
   const bill = calculateEstimatedBill(energy, profile || {}, tier || {});
   const totalDays = getDefaultTotalDays(profile);
@@ -306,8 +320,8 @@ function getAuditorMetrics() {
 }
 
 function getQualityStatus() {
-  const thdV = readLiveNumber("thd_v_pct", "thd_voltage_pct");
-  const thdI = readLiveNumber("thd_i_pct", "thd_current_pct");
+  const thdV = readLivePathNumber("pq.thd_v_pct", null) ?? readLiveNumber("thd_v_pct", "thd_voltage_pct");
+  const thdI = readLivePathNumber("pq.thd_i_pct", null) ?? readLiveNumber("thd_i_pct", "thd_current_pct");
   if ((thdV !== null && thdV >= 8) || (thdI !== null && thdI >= 25)) return "crítico";
   if ((thdV !== null && thdV >= 5) || (thdI !== null && thdI >= 15)) return "revisar";
   return "normal";
@@ -315,8 +329,8 @@ function getQualityStatus() {
 
 function getGeneralAuditorStatus() {
   if (state.failedRequests.size > 0) return ["revisar", "status-warning"];
-  const pf = readLiveNumber("pf", "power_factor");
-  const freq = readLiveNumber("frequency_hz", "freq_hz");
+  const pf = readLivePathNumber("electrical.pf", null) ?? readLiveNumber("pf", "power_factor");
+  const freq = readLivePathNumber("electrical.frequency_hz", null) ?? readLiveNumber("frequency_hz", "freq_hz");
   if ((pf !== null && pf < 0.85) || (freq !== null && (freq < 49 || freq > 51)) || getQualityStatus() === "crítico") return ["revisar", "status-critical"];
   if ((pf !== null && pf < 0.92) || getQualityStatus() === "revisar") return ["advertencia", "status-warning"];
   return ["normal", "status-ok"];
@@ -325,13 +339,18 @@ function getGeneralAuditorStatus() {
 function renderStatePanel() {
   const { energy, bill } = getAuditorMetrics();
   const [label, statusClass] = getGeneralAuditorStatus();
-  $("statePower").textContent = formatMeasurement(readLiveNumber("p_w", "power_w", "active_power_w"), " W");
-  $("stateVrms").textContent = formatMeasurement(readLiveNumber("vrms", "voltage_rms"), " V");
-  $("stateIrms").textContent = formatMeasurement(readLiveNumber("irms", "current_rms"), " A");
-  $("statePf").textContent = formatMeasurement(readLiveNumber("pf", "power_factor"));
-  $("stateFrequency").textContent = formatMeasurement(readLiveNumber("frequency_hz", "freq_hz"), " Hz");
+  const liveCost = readLivePathNumber("energy.cost_ars", null);
+  $("statePower").textContent = formatMeasurement(readLivePathNumber("electrical.p_w", null) ?? readLiveNumber("p_w", "power_w", "active_power_w"), " W");
+  $("stateVrms").textContent = formatMeasurement(readLivePathNumber("electrical.vrms", null) ?? readLiveNumber("vrms", "voltage_rms"), " V");
+  $("stateIrms").textContent = formatMeasurement(readLivePathNumber("electrical.irms", null) ?? readLiveNumber("irms", "current_rms"), " A");
+  $("stateApparentPower").textContent = formatMeasurement(readLivePathNumber("electrical.s_va", null) ?? readLiveNumber("s_va", "apparent_power_va"), " VA");
+  $("statePf").textContent = formatMeasurement(readLivePathNumber("electrical.pf", null) ?? readLiveNumber("pf", "power_factor"));
+  $("stateFrequency").textContent = formatMeasurement(readLivePathNumber("electrical.frequency_hz", null) ?? readLiveNumber("frequency_hz", "freq_hz"), " Hz");
   $("stateEnergy").textContent = formatMeasurement(energy, " kWh");
-  $("stateCost").textContent = getActiveProfile() ? money.format(bill.total) : "sin dato";
+  $("stateCost").textContent = liveCost !== null ? money.format(liveCost) : getActiveProfile() ? money.format(bill.total) : "sin dato";
+  $("stateCo2").textContent = formatMeasurement(readLivePathNumber("energy.co2_kg", null) ?? energy * CO2_KG_PER_KWH, " kg");
+  $("stateConnectionSummary").textContent = `Firebase: ${getFirebaseStatusLabel()} · ESP32: ${getEsp32StatusLabel()} · Última actualización: ${formatDateTime(state.lastLiveFetchAt ? new Date(state.lastLiveFetchAt) : null)} · IP: ${valueOrFallback(getLiveValue("wifi.ip"))}`;
+  $("stateWifiDiagnostics").textContent = `WiFi: ${getLiveValue("wifi.ok") === true ? "ok" : getLiveValue("wifi.ok") === false ? "error" : "sin dato"} · IP: ${valueOrFallback(getLiveValue("wifi.ip"))} · RSSI: ${formatMeasurement(getLiveValue("wifi.rssi"), " dBm")}`;
   const status = $("generalStatus");
   status.textContent = `Estado general: ${label}`;
   status.className = `general-status ${statusClass}`;
@@ -340,8 +359,10 @@ function renderStatePanel() {
 function renderConsumptionPanel() {
   const { energy, bill, projection, projectedBill, elapsedDays } = getAuditorMetrics();
   const daily = energy / Math.max(elapsedDays, 1);
+  const source = hasLiveValue("energy.kwh_total") ? "Fuente: ESP32 en tiempo real" : "Fuente: simulación/manual";
   const items = [
     ["Consumo acumulado", `${number.format(energy)} kWh`],
+    ["Fuente de datos", source],
     ["Consumo diario promedio", `${number.format(daily)} kWh/día`],
     ["Proyección al cierre", `${number.format(projection.projectedConsumption)} kWh`],
     ["Costo actual estimado", getActiveProfile() ? money.format(bill.total) : "sin dato"],
@@ -353,15 +374,24 @@ function renderConsumptionPanel() {
 
 function renderQualityPanel() {
   const status = getQualityStatus();
-  const harmonics = state.live?.harmonics || state.live?.harmonics_available || null;
+  const fundamental = readLivePathNumber("pq.fundamental_hz", null) ?? readLiveNumber("fundamental_frequency_hz", "frequency_hz", "freq_hz");
+  const harmonicsV = Array.isArray(getLiveValue("pq.harmonics_v_pct")) ? getLiveValue("pq.harmonics_v_pct") : [];
+  const harmonicsI = Array.isArray(getLiveValue("pq.harmonics_i_pct")) ? getLiveValue("pq.harmonics_i_pct") : [];
+  const rowCount = Math.max(harmonicsV.length, harmonicsI.length);
   const items = [
-    ["THD de tensión", formatMeasurement(readLiveNumber("thd_v_pct", "thd_voltage_pct"), "%")],
-    ["THD de corriente", formatMeasurement(readLiveNumber("thd_i_pct", "thd_current_pct"), "%")],
-    ["Frecuencia fundamental", formatMeasurement(readLiveNumber("frequency_hz", "fundamental_frequency_hz", "freq_hz"), " Hz")],
+    ["THD de tensión", formatMeasurement(readLivePathNumber("pq.thd_v_pct", null) ?? readLiveNumber("thd_v_pct", "thd_voltage_pct"), "%")],
+    ["THD de corriente", formatMeasurement(readLivePathNumber("pq.thd_i_pct", null) ?? readLiveNumber("thd_i_pct", "thd_current_pct"), "%")],
+    ["Frecuencia fundamental", formatMeasurement(fundamental, " Hz")],
     ["Estado de calidad", status],
-    ["Armónicas disponibles", harmonics ? (Array.isArray(harmonics) ? harmonics.join(", ") : "disponibles") : "sin dato"],
   ];
-  $("qualityPanel").innerHTML = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+  const cards = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+  const harmonicsTable = rowCount > 0
+    ? `<article class="card mini-card wide quality-table-card"><span>Armónicas</span><table class="quality-table"><thead><tr><th>Armónica</th><th>Frecuencia</th><th>Tensión %</th><th>Corriente %</th></tr></thead><tbody>${Array.from({ length: rowCount }, (_, index) => {
+      const harmonic = index + 1;
+      return `<tr><td>${harmonic}</td><td>${fundamental !== null ? `${number.format(fundamental * harmonic)} Hz` : "sin dato"}</td><td>${formatMeasurement(harmonicsV[index], "%")}</td><td>${formatMeasurement(harmonicsI[index], "%")}</td></tr>`;
+    }).join("")}</tbody></table></article>`
+    : `<article class="card mini-card wide"><span>Armónicas</span><strong>sin dato</strong></article>`;
+  $("qualityPanel").innerHTML = cards + harmonicsTable;
 }
 
 function renderHistoryPanel() {
@@ -494,7 +524,7 @@ function renderAlerts() {
   else if (progress >= 80) alerts.push(["warning", "Advertencia: el consumo supera el 80% del tramo actual."]);
   else alerts.push(["ok", "Consumo dentro de un margen normal del tramo actual."]);
 
-  const pf = state.live?.pf;
+  const pf = readLivePathNumber("electrical.pf", null) ?? state.live?.pf;
   if (profile?.powerFactorPenalty?.enabled) {
     if (pf === null || pf === undefined) alerts.push(["info", "Factor de potencia: sin dato en tiempo real."]);
     else if (Number(pf) < 0.92) alerts.push(["warning", `Advertencia: bajo factor de potencia (${number.format(pf)}).`]);
@@ -537,9 +567,19 @@ function renderAll() {
   renderHistoryPanel();
 }
 
+function getFirebaseStatusLabel() {
+  return state.failedRequests.size === 0 ? "conectado" : "error";
+}
+
+function getEsp32StatusLabel() {
+  if (!state.live || (!hasLiveValue("server_ms") && !hasLiveValue("uptime_ms"))) return "sin dato";
+  return state.lastLiveChangeAt && Date.now() - state.lastLiveChangeAt <= 30000 ? "online" : "sin actualización reciente";
+}
+
 function updateConnectionStatus() {
   const ok = state.failedRequests.size === 0;
-  $("firebaseStatus").textContent = ok ? "conectado" : "error de conexión";
+  $("firebaseStatus").textContent = getFirebaseStatusLabel();
+  if ($("esp32Status")) $("esp32Status").textContent = getEsp32StatusLabel();
   const badge = $("connectionBadge");
   badge.textContent = ok ? "Firebase conectado" : "Error Firebase";
   badge.className = `status-badge ${ok ? "status-ok" : "status-error"}`;
