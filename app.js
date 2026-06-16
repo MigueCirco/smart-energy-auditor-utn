@@ -33,16 +33,20 @@ const CO2_KG_PER_KWH = 0.4;
 
 const $ = (id) => document.getElementById(id);
 const valueOrFallback = (value, suffix = "") => value === null || value === undefined || value === "" ? "sin dato" : `${value}${suffix}`;
-const getLiveValue = (path, fallback = null) => path.split(".").reduce((current, key) => current?.[key], state.live) ?? fallback;
-const hasLiveValue = (path) => getLiveValue(path, null) !== null && getLiveValue(path, null) !== undefined && getLiveValue(path, null) !== "";
+const isMissing = (value) => value === null || value === undefined || value === "";
+const getLiveValue = (path, fallback = null) => {
+  const value = path.split(".").reduce((current, key) => current?.[key], state.live);
+  return isMissing(value) ? fallback : value;
+};
+const hasLiveValue = (path) => !isMissing(getLiveValue(path, null));
 const readLivePathNumber = (path, fallback = null) => toNumber(getLiveValue(path, null), fallback);
 const formatDateTime = (date) => date ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "medium" }).format(date) : "sin dato";
-const formatMeasurement = (value, suffix = "") => value === null || value === undefined || value === "" || Number.isNaN(Number(value)) ? "sin dato" : `${number.format(Number(value))}${suffix}`;
+const formatMeasurement = (value, suffix = "") => isMissing(value) || Number.isNaN(Number(value)) ? "sin dato" : `${number.format(Number(value))}${suffix}`;
 const readLiveNumber = (...keys) => {
   const key = keys.find((candidate) => getLiveValue(candidate) !== undefined && getLiveValue(candidate) !== null && getLiveValue(candidate) !== "");
   return key ? toNumber(getLiveValue(key), null) : null;
 };
-const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const toNumber = (value, fallback = null) => isMissing(value) || !Number.isFinite(Number(value)) ? fallback : Number(value);
 
 async function fetchJSON(url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -91,8 +95,7 @@ async function loadLiveData() {
     state.live = null;
     markFirebaseError(LIVE_URL, `No se pudieron leer los datos en tiempo real: ${error.message}`);
   }
-  renderLivePanel();
-  renderAlerts();
+  renderAll();
 }
 
 function getActiveProfile() {
@@ -308,7 +311,8 @@ function calculateSavingsScenario(consumptionKWh, profile, elapsedDays, totalDay
 function getAuditorMetrics() {
   const profile = getActiveProfile();
   const inputConsumption = toNumber($("consumptionInput")?.value, INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0);
-  const energy = readLivePathNumber("energy.kwh_total", null) ?? readLiveNumber("energy_kwh", "kwh", "energy_total_kwh", "active_energy_kwh") ?? inputConsumption;
+  const liveEnergy = readLivePathNumber("energy.kwh_total", null);
+  const energy = liveEnergy !== null && liveEnergy > 0 ? liveEnergy : inputConsumption;
   const tier = getCurrentTier(energy, profile?.networkChargeTiers);
   const bill = calculateEstimatedBill(energy, profile || {}, tier || {});
   const totalDays = getDefaultTotalDays(profile);
@@ -320,8 +324,9 @@ function getAuditorMetrics() {
 }
 
 function getQualityStatus() {
-  const thdV = readLivePathNumber("pq.thd_v_pct", null) ?? readLiveNumber("thd_v_pct", "thd_voltage_pct");
-  const thdI = readLivePathNumber("pq.thd_i_pct", null) ?? readLiveNumber("thd_i_pct", "thd_current_pct");
+  if (hasLiveValue("pq.status")) return getLiveValue("pq.status");
+  const thdV = readLivePathNumber("pq.thd_v_pct", null);
+  const thdI = readLivePathNumber("pq.thd_i_pct", null);
   if ((thdV !== null && thdV >= 8) || (thdI !== null && thdI >= 25)) return "crítico";
   if ((thdV !== null && thdV >= 5) || (thdI !== null && thdI >= 15)) return "revisar";
   return "normal";
@@ -337,20 +342,19 @@ function getGeneralAuditorStatus() {
 }
 
 function renderStatePanel() {
-  const { energy, bill } = getAuditorMetrics();
   const [label, statusClass] = getGeneralAuditorStatus();
   const liveCost = readLivePathNumber("energy.cost_ars", null);
-  $("statePower").textContent = formatMeasurement(readLivePathNumber("electrical.p_w", null) ?? readLiveNumber("p_w", "power_w", "active_power_w"), " W");
-  $("stateVrms").textContent = formatMeasurement(readLivePathNumber("electrical.vrms", null) ?? readLiveNumber("vrms", "voltage_rms"), " V");
-  $("stateIrms").textContent = formatMeasurement(readLivePathNumber("electrical.irms", null) ?? readLiveNumber("irms", "current_rms"), " A");
-  $("stateApparentPower").textContent = formatMeasurement(readLivePathNumber("electrical.s_va", null) ?? readLiveNumber("s_va", "apparent_power_va"), " VA");
-  $("statePf").textContent = formatMeasurement(readLivePathNumber("electrical.pf", null) ?? readLiveNumber("pf", "power_factor"));
-  $("stateFrequency").textContent = formatMeasurement(readLivePathNumber("electrical.frequency_hz", null) ?? readLiveNumber("frequency_hz", "freq_hz"), " Hz");
-  $("stateEnergy").textContent = formatMeasurement(energy, " kWh");
-  $("stateCost").textContent = liveCost !== null ? money.format(liveCost) : getActiveProfile() ? money.format(bill.total) : "sin dato";
-  $("stateCo2").textContent = formatMeasurement(readLivePathNumber("energy.co2_kg", null) ?? energy * CO2_KG_PER_KWH, " kg");
-  $("stateConnectionSummary").textContent = `Firebase: ${getFirebaseStatusLabel()} · ESP32: ${getEsp32StatusLabel()} · Última actualización: ${formatDateTime(state.lastLiveFetchAt ? new Date(state.lastLiveFetchAt) : null)} · IP: ${valueOrFallback(getLiveValue("wifi.ip"))}`;
-  $("stateWifiDiagnostics").textContent = `WiFi: ${getLiveValue("wifi.ok") === true ? "ok" : getLiveValue("wifi.ok") === false ? "error" : "sin dato"} · IP: ${valueOrFallback(getLiveValue("wifi.ip"))} · RSSI: ${formatMeasurement(getLiveValue("wifi.rssi"), " dBm")}`;
+  $("statePower").textContent = formatMeasurement(readLivePathNumber("electrical.p_w", null), " W");
+  $("stateVrms").textContent = formatMeasurement(readLivePathNumber("electrical.vrms", null), " V");
+  $("stateIrms").textContent = formatMeasurement(readLivePathNumber("electrical.irms", null), " A");
+  $("stateApparentPower").textContent = formatMeasurement(readLivePathNumber("electrical.s_va", null), " VA");
+  $("statePf").textContent = formatMeasurement(readLivePathNumber("electrical.pf", null));
+  $("stateFrequency").textContent = formatMeasurement(readLivePathNumber("electrical.frequency_hz", null), " Hz");
+  $("stateEnergy").textContent = formatMeasurement(readLivePathNumber("energy.kwh_total", null), " kWh");
+  $("stateCost").textContent = liveCost !== null ? money.format(liveCost) : "sin dato";
+  $("stateCo2").textContent = formatMeasurement(readLivePathNumber("energy.co2_kg", null), " kg");
+  $("stateConnectionSummary").textContent = `Firebase: ${getFirebaseStatusLabel()} · ESP32: ${getEsp32StatusLabel()} · Última actualización: ${formatDateTime(state.lastLiveFetchAt ? new Date(state.lastLiveFetchAt) : null)} · Estabilidad: ${valueOrFallback(getLiveValue("stability.label"))}`;
+  $("stateWifiDiagnostics").textContent = `IP local: ${valueOrFallback(getLiveValue("wifi.ip"))} · RSSI: ${formatMeasurement(getLiveValue("wifi.rssi"), " dBm")}`;
   const status = $("generalStatus");
   status.textContent = `Estado general: ${label}`;
   status.className = `general-status ${statusClass}`;
@@ -359,7 +363,8 @@ function renderStatePanel() {
 function renderConsumptionPanel() {
   const { energy, bill, projection, projectedBill, elapsedDays } = getAuditorMetrics();
   const daily = energy / Math.max(elapsedDays, 1);
-  const source = hasLiveValue("energy.kwh_total") ? "Fuente: ESP32 en tiempo real" : "Fuente: simulación/manual";
+  const liveEnergy = readLivePathNumber("energy.kwh_total", null);
+  const source = liveEnergy !== null && liveEnergy > 0 ? "Fuente: ESP32 en tiempo real" : "Fuente: simulación/manual";
   const items = [
     ["Consumo acumulado", `${number.format(energy)} kWh`],
     ["Fuente de datos", source],
@@ -373,14 +378,14 @@ function renderConsumptionPanel() {
 }
 
 function renderQualityPanel() {
-  const status = getQualityStatus();
-  const fundamental = readLivePathNumber("pq.fundamental_hz", null) ?? readLiveNumber("fundamental_frequency_hz", "frequency_hz", "freq_hz");
+  const status = hasLiveValue("pq.status") ? getLiveValue("pq.status") : getQualityStatus();
+  const fundamental = readLivePathNumber("pq.fundamental_hz", null);
   const harmonicsV = Array.isArray(getLiveValue("pq.harmonics_v_pct")) ? getLiveValue("pq.harmonics_v_pct") : [];
   const harmonicsI = Array.isArray(getLiveValue("pq.harmonics_i_pct")) ? getLiveValue("pq.harmonics_i_pct") : [];
   const rowCount = Math.max(harmonicsV.length, harmonicsI.length);
   const items = [
-    ["THD de tensión", formatMeasurement(readLivePathNumber("pq.thd_v_pct", null) ?? readLiveNumber("thd_v_pct", "thd_voltage_pct"), "%")],
-    ["THD de corriente", formatMeasurement(readLivePathNumber("pq.thd_i_pct", null) ?? readLiveNumber("thd_i_pct", "thd_current_pct"), "%")],
+    ["THD de tensión", formatMeasurement(readLivePathNumber("pq.thd_v_pct", null), "%")],
+    ["THD de corriente", formatMeasurement(readLivePathNumber("pq.thd_i_pct", null), "%")],
     ["Frecuencia fundamental", formatMeasurement(fundamental, " Hz")],
     ["Estado de calidad", status],
   ];
@@ -565,6 +570,29 @@ function renderAll() {
   renderConsumptionPanel();
   renderQualityPanel();
   renderHistoryPanel();
+  renderLiveDiagnostics();
+}
+
+function renderLiveDiagnostics() {
+  const panel = $("liveDiagnostics");
+  if (!panel) return;
+  const sections = [
+    ["live.electrical", state.live?.electrical],
+    ["live.energy", state.live?.energy],
+    ["live.pq", state.live?.pq],
+  ];
+  panel.replaceChildren();
+  sections.forEach(([label, value]) => {
+    const section = document.createElement("section");
+    section.className = "diagnostic-json-section";
+    const title = document.createElement("h3");
+    title.textContent = label;
+    const pre = document.createElement("pre");
+    pre.className = "diagnostic-json";
+    pre.textContent = value === undefined ? "sin dato" : JSON.stringify(value, null, 2);
+    section.append(title, pre);
+    panel.append(section);
+  });
 }
 
 function getFirebaseStatusLabel() {
