@@ -64,6 +64,8 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .alert.info { background: #eef6ff; border-color: #cfe3ff; color: var(--blue); }
 .card-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .projection-card { display: grid; gap: 14px; margin-top: 12px; }
+.bill-card, .diagnostics-card { margin-top: 12px; }
+.diagnostics-card { box-shadow: none; }
 .projection-controls, .projection-grid, .savings-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .projection-box, .savings-grid .bill-line { background: #f8fafc; border: 1px solid #edf0f4; border-radius: 18px; padding: 14px; }
 .projection-box { display: grid; gap: 8px; }

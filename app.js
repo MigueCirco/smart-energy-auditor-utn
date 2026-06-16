@@ -98,6 +98,35 @@ async function loadLiveData() {
   renderAll();
 }
 
+
+function getBillingPeriodKWh(live, billing) {
+  const totalKWh = toNumber(live?.energy?.kwh_total, null);
+  const cycleStartKWh = toNumber(billing?.billingPeriod?.cycleKWhStart, 0);
+  const manualCycleKWh = toNumber(billing?.billingPeriod?.cycleKWhMeasured, null);
+  const inputConsumption = toNumber($("consumptionInput")?.value, INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0);
+
+  if (totalKWh !== null) {
+    return {
+      periodKWh: Math.max(totalKWh - cycleStartKWh, 0),
+      totalKWh,
+      cycleStartKWh,
+      manualCycleKWh,
+      source: "ESP32 en tiempo real",
+      hasLiveTotal: true,
+    };
+  }
+
+  const fallbackKWh = manualCycleKWh !== null && manualCycleKWh > 0 ? manualCycleKWh : inputConsumption;
+  return {
+    periodKWh: Math.max(fallbackKWh, 0),
+    totalKWh,
+    cycleStartKWh,
+    manualCycleKWh,
+    source: "manual/simulado",
+    hasLiveTotal: false,
+  };
+}
+
 function getActiveProfile() {
   return state.profiles?.[state.selectedProfileId] || null;
 }
@@ -227,7 +256,8 @@ function renderProfileSelector() {
 
 function renderTierCard() {
   const profile = getActiveProfile();
-  const consumption = toNumber($("consumptionInput").value, 0);
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  const consumption = billingKWh.periodKWh;
   const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
   const from = toNumber(tier?.fromKWh ?? tier?.minKWh ?? tier?.from, 0);
   const rawTo = tier?.toKWh ?? tier?.maxKWh ?? tier?.to;
@@ -242,7 +272,7 @@ function renderTierCard() {
     <p class="metric-large">${valueOrFallback(tier?.name || tier?.label || tier?.category || tier?.id || `Tramo ${tier?.index + 1 || ""}`)}</p>
     <dl class="data-list">
       <div><dt>Rango de kWh</dt><dd>${number.format(from)} - ${Number.isFinite(to) ? number.format(to) : "sin límite"}</dd></div>
-      <div><dt>Consumo acumulado</dt><dd>${number.format(consumption)} kWh</dd></div>
+      <div><dt>Consumo del período</dt><dd>${number.format(consumption)} kWh</dd></div>
       <div><dt>kWh restantes</dt><dd>${remaining === null ? "sin límite" : `${number.format(remaining)} kWh`}</dd></div>
       <div><dt>Avance del tramo</dt><dd>${number.format(progress)}%</dd></div>
     </dl>
@@ -311,8 +341,8 @@ function calculateSavingsScenario(consumptionKWh, profile, elapsedDays, totalDay
 function getAuditorMetrics() {
   const profile = getActiveProfile();
   const inputConsumption = toNumber($("consumptionInput")?.value, INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0);
-  const liveEnergy = readLivePathNumber("energy.kwh_total", null);
-  const energy = liveEnergy !== null && liveEnergy > 0 ? liveEnergy : inputConsumption;
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  const energy = billingKWh.periodKWh;
   const tier = getCurrentTier(energy, profile?.networkChargeTiers);
   const bill = calculateEstimatedBill(energy, profile || {}, tier || {});
   const totalDays = getDefaultTotalDays(profile);
@@ -320,7 +350,7 @@ function getAuditorMetrics() {
   const projection = calculateProjection(energy, tier, profile || {}, elapsedDays, totalDays);
   const projectedTier = getCurrentTier(projection.projectedConsumption, profile?.networkChargeTiers);
   const projectedBill = calculateEstimatedBill(projection.projectedConsumption, profile || {}, projectedTier || {});
-  return { profile, energy, tier, bill, totalDays, elapsedDays, projection, projectedBill };
+  return { profile, energy, tier, bill, totalDays, elapsedDays, projection, projectedBill, billingKWh };
 }
 
 function getQualityStatus() {
@@ -350,7 +380,9 @@ function renderStatePanel() {
   $("stateApparentPower").textContent = formatMeasurement(readLivePathNumber("electrical.s_va", null), " VA");
   $("statePf").textContent = formatMeasurement(readLivePathNumber("electrical.pf", null));
   $("stateFrequency").textContent = formatMeasurement(readLivePathNumber("electrical.frequency_hz", null), " Hz");
-  $("stateEnergy").textContent = formatMeasurement(readLivePathNumber("energy.kwh_total", null), " kWh");
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  $("stateEnergy").textContent = formatMeasurement(billingKWh.totalKWh, " kWh");
+  $("statePeriodEnergy").textContent = `${number.format(billingKWh.periodKWh)} kWh`;
   $("stateCost").textContent = liveCost !== null ? money.format(liveCost) : "sin dato";
   $("stateCo2").textContent = formatMeasurement(readLivePathNumber("energy.co2_kg", null), " kg");
   $("stateConnectionSummary").textContent = `Firebase: ${getFirebaseStatusLabel()} · ESP32: ${getEsp32StatusLabel()} · Última actualización: ${formatDateTime(state.lastLiveFetchAt ? new Date(state.lastLiveFetchAt) : null)} · Estabilidad: ${valueOrFallback(getLiveValue("stability.label"))}`;
@@ -361,12 +393,11 @@ function renderStatePanel() {
 }
 
 function renderConsumptionPanel() {
-  const { energy, bill, projection, projectedBill, elapsedDays } = getAuditorMetrics();
+  const { energy, bill, projection, projectedBill, elapsedDays, billingKWh } = getAuditorMetrics();
   const daily = energy / Math.max(elapsedDays, 1);
-  const liveEnergy = readLivePathNumber("energy.kwh_total", null);
-  const source = liveEnergy !== null && liveEnergy > 0 ? "Fuente: ESP32 en tiempo real" : "Fuente: simulación/manual";
+  const source = `Fuente: ${billingKWh.source}`;
   const items = [
-    ["Consumo acumulado", `${number.format(energy)} kWh`],
+    ["Consumo del período", `${number.format(energy)} kWh`],
     ["Fuente de datos", source],
     ["Consumo diario promedio", `${number.format(daily)} kWh/día`],
     ["Proyección al cierre", `${number.format(projection.projectedConsumption)} kWh`],
@@ -403,7 +434,7 @@ function renderHistoryPanel() {
   const { energy, bill } = getAuditorMetrics();
   const items = [
     ["Resumen histórico", state.live?.history_summary ? "disponible" : "preparado"],
-    ["Energía acumulada", `${number.format(energy)} kWh`],
+    ["Consumo del período", `${number.format(energy)} kWh`],
     ["Costo acumulado", getActiveProfile() ? money.format(bill.total) : "sin dato"],
     ["CO₂ estimado", `${number.format(energy * CO2_KG_PER_KWH)} kg`],
   ];
@@ -422,14 +453,15 @@ function setupNavigation() {
 
 function renderEstimatedBill() {
   const profile = getActiveProfile();
-  const consumption = toNumber($("consumptionInput").value, 0);
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  const consumption = billingKWh.periodKWh;
   const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
   const bill = calculateEstimatedBill(consumption, profile || {}, tier || {});
   const hasProfile = Boolean(profile);
   const moneyOrFallback = (value) => hasProfile ? money.format(value) : "sin dato";
   $("estimatedBill").innerHTML = `
     <h2>Estimación económica</h2>
-    <p class="calculation-warning">Estimación orientativa basada en perfiles tarifarios cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
+    <p class="calculation-warning">Estimación orientativa basada en el consumo del período tarifario y perfiles cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
     <div class="bill-lines">
       <div class="bill-line"><span class="label">Cargo de energía bruto</span><strong>${moneyOrFallback(bill.grossEnergy)}</strong></div>
       <div class="bill-line"><span class="label">Subsidio estimado</span><strong>${hasProfile ? `-${money.format(bill.subsidy.amount)}` : "sin dato"}</strong></div>
@@ -443,6 +475,7 @@ function renderEstimatedBill() {
       <summary>Diagnóstico de subsidio</summary>
       <dl class="data-list diagnostics-list">
         <div><dt>activeProfileId</dt><dd>${valueOrFallback(state.selectedProfileId)}</dd></div>
+        <div><dt>Consumo del período usado</dt><dd>${number.format(consumption)} kWh</dd></div>
         <div><dt>Campo detectado</dt><dd>${hasProfile ? valueOrFallback(bill.subsidy.detectedField, "") : "sin dato"}</dd></div>
         <div><dt>Descuento usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.discountARSperKWh)} $/kWh` : "sin dato"}</dd></div>
         <div><dt>limitKWh usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.limitKWh)} kWh` : "sin dato"}</dd></div>
@@ -460,7 +493,8 @@ function getDefaultTotalDays(profile) {
 
 function renderProjectionPanel() {
   const profile = getActiveProfile();
-  const consumption = toNumber($('consumptionInput').value, 0);
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  const consumption = billingKWh.periodKWh;
   const currentTier = getCurrentTier(consumption, profile?.networkChargeTiers);
   const hasExistingInputs = Boolean($('elapsedDaysInput'));
   const defaultTotalDays = getDefaultTotalDays(profile);
@@ -518,7 +552,8 @@ function renderProjectionPanel() {
 
 function renderAlerts() {
   const profile = getActiveProfile();
-  const consumption = toNumber($("consumptionInput").value, 0);
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  const consumption = billingKWh.periodKWh;
   const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
   const from = toNumber(tier?.fromKWh ?? tier?.minKWh ?? tier?.from, 0);
   const to = tier?.toKWh ?? tier?.maxKWh ?? tier?.to;
@@ -559,10 +594,26 @@ function renderConnectionPanel() {
   $("tariffCode").textContent = valueOrFallback(profile?.tariffCode || profile?.code);
 }
 
+function renderTariffDiagnostics() {
+  const panel = $("tariffDiagnostics");
+  if (!panel) return;
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  panel.innerHTML = `
+    <h2>Diagnóstico tarifario</h2>
+    <dl class="data-list diagnostics-list">
+      <div><dt>kWh total ESP32</dt><dd>${billingKWh.totalKWh === null ? "sin dato" : `${number.format(billingKWh.totalKWh)} kWh`}</dd></div>
+      <div><dt>kWh inicio del período</dt><dd>${number.format(billingKWh.cycleStartKWh)} kWh</dd></div>
+      <div><dt>kWh usados para tarifa</dt><dd>${number.format(billingKWh.periodKWh)} kWh</dd></div>
+      <div><dt>Fuente del dato</dt><dd>${billingKWh.source}</dd></div>
+    </dl>
+  `;
+}
+
 function renderAll() {
   renderConnectionPanel();
   renderTierCard();
   renderEstimatedBill();
+  renderTariffDiagnostics();
   renderProjectionPanel();
   renderAlerts();
   renderLivePanel();
