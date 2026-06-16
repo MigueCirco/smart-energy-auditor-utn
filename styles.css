@@ -99,3 +99,23 @@ select:focus, input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px va
   .live-grid { grid-template-columns: 1fr; }
   .card { padding: 18px; border-radius: 18px; }
 }
+
+.diagnostics-panel {
+  margin-top: 16px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.diagnostics-panel summary {
+  cursor: pointer;
+  padding-top: 14px;
+  font-weight: 700;
+}
+
+.diagnostics-list {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
