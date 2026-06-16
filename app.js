@@ -353,13 +353,43 @@ function getAuditorMetrics() {
   return { profile, energy, tier, bill, totalDays, elapsedDays, projection, projectedBill, billingKWh };
 }
 
+function getThdStatus(type, value) {
+  if (value === null) return { label: "sin dato", level: "unknown" };
+  const warningLimit = type === "voltage" ? 5 : 10;
+  const criticalLimit = type === "voltage" ? 8 : 20;
+  if (value <= warningLimit) return { label: "normal", level: "normal" };
+  if (value <= criticalLimit) return { label: "revisar", level: "warning" };
+  return { label: type === "voltage" ? "moderado alto" : "crítico", level: "critical" };
+}
+
 function getQualityStatus() {
-  if (hasLiveValue("pq.status")) return getLiveValue("pq.status");
-  const thdV = readLivePathNumber("pq.thd_v_pct", null);
-  const thdI = readLivePathNumber("pq.thd_i_pct", null);
-  if ((thdV !== null && thdV >= 8) || (thdI !== null && thdI >= 25)) return "crítico";
-  if ((thdV !== null && thdV >= 5) || (thdI !== null && thdI >= 15)) return "revisar";
+  const thdVStatus = getThdStatus("voltage", readLivePathNumber("pq.thd_v_pct", null));
+  const thdIStatus = getThdStatus("current", readLivePathNumber("pq.thd_i_pct", null));
+  if (thdVStatus.level === "critical" || thdIStatus.level === "critical") return "crítico";
+  if (thdVStatus.level === "warning" || thdIStatus.level === "warning") return "revisar";
+  if (thdVStatus.level === "unknown" && thdIStatus.level === "unknown") return "sin dato";
   return "normal";
+}
+
+function getQualityStatusClass(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("crít") || normalized.includes("crit") || normalized.includes("alto")) return "status-critical";
+  if (normalized.includes("moder") || normalized.includes("revis") || normalized.includes("advert")) return "status-warning";
+  if (normalized.includes("normal") || normalized.includes("ok")) return "status-ok";
+  return "status-loading";
+}
+
+function formatHarmonicLabel(harmonicNumber) {
+  return `${harmonicNumber}ª`;
+}
+
+function formatFrequencyHz(value) {
+  if (value === null || !Number.isFinite(Number(value))) return "sin dato";
+  const rounded = Math.round(Number(value));
+  const formatted = Math.abs(Number(value) - rounded) < 0.05
+    ? new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(rounded)
+    : new Intl.NumberFormat("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(value));
+  return `${formatted} Hz`;
 }
 
 function getGeneralAuditorStatus() {
@@ -409,25 +439,51 @@ function renderConsumptionPanel() {
 }
 
 function renderQualityPanel() {
-  const status = hasLiveValue("pq.status") ? getLiveValue("pq.status") : getQualityStatus();
+  const firmwareStatus = hasLiveValue("pq.status") ? getLiveValue("pq.status") : "sin dato";
+  const calculatedStatus = getQualityStatus();
   const fundamental = readLivePathNumber("pq.fundamental_hz", null);
+  const thdV = readLivePathNumber("pq.thd_v_pct", null);
+  const thdI = readLivePathNumber("pq.thd_i_pct", null);
+  const thdVStatus = getThdStatus("voltage", thdV);
+  const thdIStatus = getThdStatus("current", thdI);
   const harmonicsV = Array.isArray(getLiveValue("pq.harmonics_v_pct")) ? getLiveValue("pq.harmonics_v_pct") : [];
   const harmonicsI = Array.isArray(getLiveValue("pq.harmonics_i_pct")) ? getLiveValue("pq.harmonics_i_pct") : [];
   const rowCount = Math.max(harmonicsV.length, harmonicsI.length);
-  const items = [
-    ["THD de tensión", formatMeasurement(readLivePathNumber("pq.thd_v_pct", null), "%")],
-    ["THD de corriente", formatMeasurement(readLivePathNumber("pq.thd_i_pct", null), "%")],
-    ["Frecuencia fundamental", formatMeasurement(fundamental, " Hz")],
-    ["Estado de calidad", status],
+  const maxValue = Math.max(1, ...harmonicsV, ...harmonicsI);
+  const cardItems = [
+    ["THD tensión", formatMeasurement(thdV, "%"), thdVStatus.label, thdVStatus.level],
+    ["THD corriente", formatMeasurement(thdI, "%"), thdIStatus.label, thdIStatus.level],
+    ["Frecuencia fundamental", formatMeasurement(fundamental, " Hz"), "referencia", "info"],
+    ["Estado de calidad", calculatedStatus, `Firmware: ${firmwareStatus}`, getQualityStatusClass(calculatedStatus).replace("status-", "")],
   ];
-  const cards = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+  const cards = cardItems.map(([label, value, badge, level]) => `
+    <article class="card mini-card quality-card quality-${level}">
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${badge}</small>
+    </article>`).join("");
+  const harmonicsRows = Array.from({ length: rowCount }, (_, index) => {
+    const harmonicNumber = index + 2;
+    const frequency = fundamental !== null ? fundamental * harmonicNumber : null;
+    const voltage = toNumber(harmonicsV[index], null);
+    const current = toNumber(harmonicsI[index], null);
+    return { harmonicNumber, frequency, voltage, current };
+  });
+  const spectrum = rowCount > 0
+    ? `<article class="card mini-card wide spectrum-card"><span>Espectro armónico</span><div class="harmonic-spectrum">${harmonicsRows.map(({ harmonicNumber, voltage, current }) => `
+      <div class="spectrum-row">
+        <div class="spectrum-label">${formatHarmonicLabel(harmonicNumber)}</div>
+        <div class="spectrum-bars">
+          <div class="spectrum-bar-line"><span>Tensión</span><div class="spectrum-track"><div class="spectrum-bar voltage" style="width:${Math.min(((voltage || 0) / maxValue) * 100, 100)}%"></div></div><strong>${formatMeasurement(voltage, "%")}</strong></div>
+          <div class="spectrum-bar-line"><span>Corriente</span><div class="spectrum-track"><div class="spectrum-bar current" style="width:${Math.min(((current || 0) / maxValue) * 100, 100)}%"></div></div><strong>${formatMeasurement(current, "%")}</strong></div>
+        </div>
+      </div>`).join("")}</div></article>`
+    : `<article class="card mini-card wide"><span>Espectro armónico</span><strong>sin dato</strong></article>`;
   const harmonicsTable = rowCount > 0
-    ? `<article class="card mini-card wide quality-table-card"><span>Armónicas</span><table class="quality-table"><thead><tr><th>Armónica</th><th>Frecuencia</th><th>Tensión %</th><th>Corriente %</th></tr></thead><tbody>${Array.from({ length: rowCount }, (_, index) => {
-      const harmonic = index + 1;
-      return `<tr><td>${harmonic}</td><td>${fundamental !== null ? `${number.format(fundamental * harmonic)} Hz` : "sin dato"}</td><td>${formatMeasurement(harmonicsV[index], "%")}</td><td>${formatMeasurement(harmonicsI[index], "%")}</td></tr>`;
-    }).join("")}</tbody></table></article>`
-    : `<article class="card mini-card wide"><span>Armónicas</span><strong>sin dato</strong></article>`;
-  $("qualityPanel").innerHTML = cards + harmonicsTable;
+    ? `<article class="card mini-card wide quality-table-card"><span>Tabla de armónicas</span><table class="quality-table"><thead><tr><th>Armónica</th><th>Frecuencia</th><th>Tensión %</th><th>Corriente %</th></tr></thead><tbody>${harmonicsRows.map(({ harmonicNumber, frequency, voltage, current }) => `
+      <tr><td>${formatHarmonicLabel(harmonicNumber)}</td><td>${formatFrequencyHz(frequency)}</td><td>${formatMeasurement(voltage, "%")}</td><td>${formatMeasurement(current, "%")}</td></tr>`).join("")}</tbody></table></article>`
+    : `<article class="card mini-card wide"><span>Tabla de armónicas</span><strong>sin dato</strong></article>`;
+  $("qualityPanel").innerHTML = cards + spectrum + harmonicsTable;
 }
 
 function renderHistoryPanel() {
