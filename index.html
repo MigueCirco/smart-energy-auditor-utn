@@ -8,65 +8,99 @@
 </head>
 <body>
   <main class="app-shell">
-    <header class="hero card">
+    <header class="app-header">
       <div>
-        <p class="eyebrow">Tablero estático · GitHub Pages</p>
+        <p class="eyebrow">Auditoría energética · GitHub Pages</p>
         <h1>Smart Energy Auditor</h1>
-        <p class="subtitle">Monitoreo energético, calidad de energía y análisis tarifario</p>
+        <p class="subtitle">Medición, análisis tarifario, costos, CO₂ y calidad de energía.</p>
       </div>
       <div id="connectionBadge" class="status-badge status-loading">Conectando…</div>
     </header>
 
     <section id="errorBanner" class="error-banner hidden" role="alert"></section>
 
-    <section class="grid two-columns">
-      <article class="card connection-panel">
-        <h2>Conexión y configuración</h2>
-        <dl class="data-list">
-          <div><dt>Estado Firebase</dt><dd id="firebaseStatus">sin dato</dd></div>
-          <div><dt>Dispositivo activo</dt><dd>sea_001</dd></div>
-          <div><dt>Perfil activo Firebase</dt><dd id="activeProfileId">sin dato</dd></div>
-          <div><dt>Tipo de usuario</dt><dd id="userType">sin dato</dd></div>
-          <div><dt>Código tarifario</dt><dd id="tariffCode">sin dato</dd></div>
-        </dl>
+    <section id="estado" class="tab-panel active" aria-labelledby="tab-estado">
+      <div class="section-heading">
+        <p class="eyebrow">Estado</p>
+        <h2>Pantalla principal del auditor</h2>
+      </div>
+      <article class="card hero-card">
+        <div>
+          <span class="pill">Dispositivo activo · sea_001</span>
+          <p class="metric-label">Potencia activa actual</p>
+          <p id="statePower" class="metric-hero">sin dato</p>
+        </div>
+        <div id="generalStatus" class="general-status">Revisando…</div>
       </article>
+      <div class="metric-grid">
+        <article class="card mini-card"><span>Estado Firebase</span><strong id="firebaseStatus">sin dato</strong></article>
+        <article class="card mini-card"><span>Tensión RMS</span><strong id="stateVrms">sin dato</strong></article>
+        <article class="card mini-card"><span>Corriente RMS</span><strong id="stateIrms">sin dato</strong></article>
+        <article class="card mini-card"><span>Factor de potencia</span><strong id="statePf">sin dato</strong></article>
+        <article class="card mini-card"><span>Frecuencia</span><strong id="stateFrequency">sin dato</strong></article>
+        <article class="card mini-card"><span>Energía acumulada</span><strong id="stateEnergy">sin dato</strong></article>
+        <article class="card mini-card wide"><span>Costo estimado</span><strong id="stateCost">sin dato</strong></article>
+      </div>
+      <article class="card alerts-card">
+        <h2>Alertas del auditor</h2>
+        <div id="alertsList" class="alerts-list"></div>
+      </article>
+    </section>
 
+    <section id="consumo" class="tab-panel" aria-labelledby="tab-consumo">
+      <div class="section-heading"><p class="eyebrow">Consumo</p><h2>Resumen del período</h2></div>
+      <div id="consumptionCards" class="metric-grid large-cards"></div>
+    </section>
+
+    <section id="tarifas" class="tab-panel" aria-labelledby="tab-tarifas">
+      <div class="section-heading"><p class="eyebrow">Tarifas</p><h2>Análisis tarifario y subsidios</h2></div>
       <article class="card controls-panel">
-        <h2>Perfil tarifario y simulación</h2>
         <label class="field-label" for="profileSelector">Perfil tarifario</label>
         <select id="profileSelector"></select>
-
         <label class="field-label" for="consumptionInput">Consumo acumulado del período (kWh)</label>
         <input id="consumptionInput" type="number" min="0" step="1" inputmode="decimal" />
       </article>
-    </section>
-
-    <section class="grid two-columns">
-      <article id="tierCard" class="card tier-card"></article>
+      <div class="grid two-columns">
+        <article class="card"><h2>Datos del perfil</h2><dl class="data-list"><div><dt>Tipo de usuario</dt><dd id="userType">sin dato</dd></div><div><dt>Código tarifario</dt><dd id="tariffCode">sin dato</dd></div><div><dt>Perfil activo Firebase</dt><dd id="activeProfileId">sin dato</dd></div></dl></article>
+        <article id="tierCard" class="card tier-card"></article>
+      </div>
+      <article id="projectionPanel" class="card projection-card"></article>
       <article id="estimatedBill" class="card bill-card"></article>
     </section>
 
-    <section class="grid">
-      <article id="projectionPanel" class="card projection-card"></article>
+    <section id="calidad" class="tab-panel" aria-labelledby="tab-calidad">
+      <div class="section-heading"><p class="eyebrow">Calidad</p><h2>Indicadores de calidad de energía</h2></div>
+      <article class="card info-card">Estos indicadores ayudan a detectar distorsión, cargas no lineales y posibles problemas de calidad de energía.</article>
+      <div id="qualityPanel" class="metric-grid"></div>
     </section>
 
-    <section class="grid two-columns">
-      <article class="card alerts-card">
-        <h2>Alertas</h2>
-        <div id="alertsList" class="alerts-list"></div>
-      </article>
-
-      <article class="card live-card">
-        <div class="card-title-row">
-          <h2>Datos en tiempo real</h2>
-          <span class="refresh-note">Actualiza cada 10 s</span>
-        </div>
-        <div id="livePanel" class="live-grid"></div>
-      </article>
+    <section id="historico" class="tab-panel" aria-labelledby="tab-historico">
+      <div class="section-heading"><p class="eyebrow">Histórico</p><h2>Resumen histórico disponible</h2></div>
+      <div id="historyPanel" class="metric-grid"></div>
+      <article class="card chart-placeholder">Aún no hay suficientes datos históricos para graficar.</article>
     </section>
 
-    <p class="disclaimer">Estimación orientativa basada en perfiles tarifarios cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
+    <section id="mas" class="tab-panel" aria-labelledby="tab-mas">
+      <div class="section-heading"><p class="eyebrow">Más</p><h2>Accesos secundarios</h2></div>
+      <div class="more-list">
+        <article class="card more-card"><h3>Diagnóstico técnico</h3><p>Lectura de endpoints actuales: billing.json, tariffProfiles.json y live.json.</p></article>
+        <article class="card more-card"><h3>Configuración de lectura</h3><p>Firebase RTDB vía fetch(), sin SDK, sin backend y sin escritura.</p></article>
+        <article class="card more-card"><h3>Acerca del proyecto</h3><p>Smart Energy Auditor mide, registra, analiza y alerta sobre consumo eléctrico, calidad de energía, costos, tarifas, historial, CO₂ y proyecciones.</p></article>
+        <article class="card more-card locked"><span class="pill">Próximamente</span><h3>Smart Energy Plus</h3><p>Funciones de gestión solar, baterías, inversor híbrido y control de cargas estarán disponibles en una versión futura. Smart Energy Auditor se enfoca en medición, análisis tarifario y calidad de energía.</p></article>
+      </div>
+    </section>
+
+    <p class="disclaimer">Estimación orientativa. No reemplaza la liquidación oficial de la distribuidora.</p>
   </main>
+
+  <nav class="bottom-nav" aria-label="Navegación principal">
+    <button id="tab-estado" class="nav-item active" data-tab="estado">Estado</button>
+    <button id="tab-consumo" class="nav-item" data-tab="consumo">Consumo</button>
+    <button id="tab-tarifas" class="nav-item" data-tab="tarifas">Tarifas</button>
+    <button id="tab-calidad" class="nav-item" data-tab="calidad">Calidad</button>
+    <button id="tab-historico" class="nav-item" data-tab="historico">Histórico</button>
+    <button id="tab-mas" class="nav-item" data-tab="mas">Más</button>
+  </nav>
 
   <script src="app.js"></script>
 </body>
