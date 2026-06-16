@@ -38,6 +38,12 @@ https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com/devices/sea_001/l
 4. Elegir la rama principal y la carpeta raíz `/`.
 5. Guardar la configuración y esperar a que GitHub publique la URL del sitio.
 
+## Instalación como app
+
+- **Android/Chrome**: abrir la web → menú → **Instalar app** o **Agregar a pantalla principal**.
+- **iPhone/Safari**: compartir → **Agregar a pantalla de inicio**.
+- El ícono instalado usa `manifest.webmanifest` y `apple-touch-icon`.
+
 ## Limitaciones actuales
 
 - Los datos dependen de que Firebase Realtime Database permita lectura pública de los nodos utilizados.
