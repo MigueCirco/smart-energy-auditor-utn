@@ -9,6 +9,10 @@ const SERVICE_WORKER_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 const BILLING_URL = `${BASE_URL}/devices/${DEVICE_ID}/config/billing.json`;
 const PROFILES_URL = `${BASE_URL}/tariffProfiles.json`;
 const LIVE_URL = `${BASE_URL}/devices/${DEVICE_ID}/live.json`;
+const THEME_STORAGE_KEY = "sea-theme-preference";
+const THEME_OPTIONS = ["light", "dark", "system"];
+const THEME_LABELS = { light: "Claro", dark: "Oscuro", system: "Sistema" };
+const THEME_COLORS = { light: "#f97316", dark: "#0f172a" };
 
 const PROFILE_LABELS = {
   edet_residential_t1r_n3: "Casa residencial T1R - N3",
@@ -54,6 +58,53 @@ const readLiveNumber = (...keys) => {
   return key ? toNumber(getLiveValue(key), null) : null;
 };
 const toNumber = (value, fallback = null) => isMissing(value) || !Number.isFinite(Number(value)) ? fallback : Number(value);
+
+function getStoredThemePreference() {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  return THEME_OPTIONS.includes(stored) ? stored : "system";
+}
+
+function getSystemTheme() {
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function resolveTheme(preference) {
+  return preference === "system" ? getSystemTheme() : preference;
+}
+
+function applyTheme(preference) {
+  const safePreference = THEME_OPTIONS.includes(preference) ? preference : "system";
+  const resolvedTheme = resolveTheme(safePreference);
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.dataset.themePreference = safePreference;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLORS[resolvedTheme]);
+  document.querySelectorAll('input[name="themePreference"]').forEach((input) => {
+    input.checked = input.value === safePreference;
+  });
+  const status = $("themeStatus");
+  if (status) {
+    status.textContent = safePreference === "system"
+      ? `Tema del sistema: ${THEME_LABELS[resolvedTheme]}`
+      : `Tema seleccionado: ${THEME_LABELS[safePreference]}`;
+  }
+}
+
+function setThemePreference(preference) {
+  localStorage.setItem(THEME_STORAGE_KEY, preference);
+  applyTheme(preference);
+}
+
+function setupThemeToggle() {
+  applyTheme(getStoredThemePreference());
+  document.querySelectorAll('input[name="themePreference"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) setThemePreference(input.value);
+    });
+  });
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (getStoredThemePreference() === "system") applyTheme("system");
+  });
+}
 
 async function fetchJSON(url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -811,6 +862,7 @@ function showError(message) {
 
 async function init() {
   setupNavigation();
+  setupThemeToggle();
   wireUpdateButtons();
   registerServiceWorker();
   checkVersionFile();

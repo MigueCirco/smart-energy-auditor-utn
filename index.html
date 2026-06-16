@@ -6,6 +6,18 @@
   <title>Smart Energy Auditor</title>
   <link rel="manifest" href="manifest.webmanifest?v=0.2.0" />
   <meta name="theme-color" content="#f97316" />
+  <script>
+    (() => {
+      const storageKey = "sea-theme-preference";
+      const fallback = "system";
+      const validThemes = ["light", "dark", "system"];
+      const stored = localStorage.getItem(storageKey);
+      const preference = validThemes.includes(stored) ? stored : fallback;
+      const resolved = preference === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : preference === "system" ? "light" : preference;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themePreference = preference;
+    })();
+  </script>
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="SEA" />
@@ -99,6 +111,17 @@
     <section id="mas" class="tab-panel" aria-labelledby="tab-mas">
       <div class="section-heading"><p class="eyebrow">Más</p><h2>Accesos secundarios</h2></div>
       <div class="more-list">
+        <article class="card more-card theme-card">
+          <h3>Apariencia</h3>
+          <p>Elegí cómo querés visualizar el auditor. La preferencia queda guardada en este dispositivo.</p>
+          <fieldset class="theme-toggle" aria-label="Selector de tema visual">
+            <legend>Tema</legend>
+            <label><input type="radio" name="themePreference" value="light" /> Claro</label>
+            <label><input type="radio" name="themePreference" value="dark" /> Oscuro</label>
+            <label><input type="radio" name="themePreference" value="system" /> Sistema</label>
+          </fieldset>
+          <p id="themeStatus" class="theme-status" aria-live="polite">Tema del sistema</p>
+        </article>
         <article class="card more-card"><h3>Diagnóstico técnico</h3><p>Lectura de endpoints actuales: billing.json, tariffProfiles.json y live.json.</p><dl class="data-list diagnostics-list"><div><dt>Front</dt><dd id="frontVersion">sin dato</dd></div><div><dt>Última carga</dt><dd id="frontLoadedAt">sin dato</dd></div></dl><button id="manualUpdateButton" class="secondary-button" type="button">Actualizar app</button></article>
         <article class="card more-card">
           <details class="diagnostics-panel" open>
