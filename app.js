@@ -21,7 +21,7 @@ const state = {
   profiles: {},
   live: null,
   selectedProfileId: null,
-  connectionOk: false,
+  failedRequests: new Set(),
 };
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
@@ -34,38 +34,42 @@ const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Numbe
 async function fetchJSON(url) {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`Firebase respondió ${response.status} en ${url}`);
+  state.failedRequests.delete(url);
   return response.json();
+}
+
+function markFirebaseError(url, message) {
+  state.failedRequests.add(url);
+  showError(message);
+  updateConnectionStatus();
 }
 
 async function loadBilling() {
   try {
     state.billing = await fetchJSON(BILLING_URL) || {};
     state.selectedProfileId = state.selectedProfileId || state.billing.activeProfileId || null;
-    updateConnectionStatus(true);
+    updateConnectionStatus();
   } catch (error) {
-    showError(`No se pudo leer la configuración de facturación: ${error.message}`);
-    updateConnectionStatus(false);
+    markFirebaseError(BILLING_URL, `No se pudo leer la configuración de facturación: ${error.message}`);
   }
 }
 
 async function loadTariffProfiles() {
   try {
     state.profiles = await fetchJSON(PROFILES_URL) || {};
-    updateConnectionStatus(true);
+    updateConnectionStatus();
   } catch (error) {
-    showError(`No se pudieron leer los perfiles tarifarios: ${error.message}`);
-    updateConnectionStatus(false);
+    markFirebaseError(PROFILES_URL, `No se pudieron leer los perfiles tarifarios: ${error.message}`);
   }
 }
 
 async function loadLiveData() {
   try {
     state.live = await fetchJSON(LIVE_URL) || {};
-    updateConnectionStatus(true);
+    updateConnectionStatus();
   } catch (error) {
     state.live = null;
-    showError(`No se pudieron leer los datos en tiempo real: ${error.message}`);
-    updateConnectionStatus(false);
+    markFirebaseError(LIVE_URL, `No se pudieron leer los datos en tiempo real: ${error.message}`);
   }
   renderLivePanel();
   renderAlerts();
@@ -114,6 +118,16 @@ function renderProfileSelector() {
     selector.appendChild(option);
   });
 
+  if (!available.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "sin dato";
+    selector.appendChild(option);
+    selector.disabled = true;
+  } else {
+    selector.disabled = false;
+  }
+
   state.selectedProfileId = state.selectedProfileId || available[0] || null;
   selector.value = state.selectedProfileId || "";
   selector.addEventListener("change", () => {
@@ -153,15 +167,18 @@ function renderEstimatedBill() {
   const consumption = toNumber($("consumptionInput").value, 0);
   const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
   const bill = calculateEstimatedBill(consumption, profile || {}, tier || {});
+  const hasProfile = Boolean(profile);
+  const moneyOrFallback = (value) => hasProfile ? money.format(value) : "sin dato";
   $("estimatedBill").innerHTML = `
     <h2>Estimación económica</h2>
+    <p class="calculation-warning">Estimación orientativa basada en perfiles tarifarios cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
     <div class="bill-lines">
-      <div class="bill-line"><span class="label">Cargo de energía bruto</span><strong>${money.format(bill.grossEnergy)}</strong></div>
-      <div class="bill-line"><span class="label">Subsidio estimado</span><strong>-${money.format(bill.subsidy)}</strong></div>
-      <div class="bill-line"><span class="label">Cargo de red</span><strong>${money.format(bill.networkCharge)}</strong></div>
-      <div class="bill-line"><span class="label">Otros cargos fijos</span><strong>${money.format(bill.otherCharges)}</strong></div>
-      <div class="bill-line"><span class="label">Subtotal aproximado</span><strong>${money.format(bill.subtotal)}</strong></div>
-      <div class="bill-line total"><span>Total aproximado</span><strong>${money.format(bill.total)}</strong></div>
+      <div class="bill-line"><span class="label">Cargo de energía bruto</span><strong>${moneyOrFallback(bill.grossEnergy)}</strong></div>
+      <div class="bill-line"><span class="label">Subsidio estimado</span><strong>${hasProfile ? `-${money.format(bill.subsidy)}` : "sin dato"}</strong></div>
+      <div class="bill-line"><span class="label">Cargo de red</span><strong>${moneyOrFallback(bill.networkCharge)}</strong></div>
+      <div class="bill-line"><span class="label">Otros cargos fijos</span><strong>${moneyOrFallback(bill.otherCharges)}</strong></div>
+      <div class="bill-line"><span class="label">Subtotal aproximado</span><strong>${moneyOrFallback(bill.subtotal)}</strong></div>
+      <div class="bill-line total"><span>Total aproximado</span><strong>${moneyOrFallback(bill.total)}</strong></div>
     </div>`;
 }
 
@@ -215,8 +232,8 @@ function renderAll() {
   renderLivePanel();
 }
 
-function updateConnectionStatus(ok) {
-  state.connectionOk = ok;
+function updateConnectionStatus() {
+  const ok = state.failedRequests.size === 0;
   $("firebaseStatus").textContent = ok ? "conectado" : "error de conexión";
   const badge = $("connectionBadge");
   badge.textContent = ok ? "Firebase conectado" : "Error Firebase";

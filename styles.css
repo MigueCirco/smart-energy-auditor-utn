@@ -73,6 +73,7 @@ select:focus, input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px va
 .progress-bar.critical { background: linear-gradient(90deg, var(--amber), var(--red)); }
 .metric-large { font-size: 2.3rem; font-weight: 900; color: var(--amber); margin: 0 0 8px; }
 
+.calculation-warning { margin: 0 0 16px; color: #fef3c7; background: rgba(250,204,21,.10); border: 1px solid rgba(250,204,21,.30); border-radius: 14px; padding: 12px 14px; }
 .bill-lines { display: grid; gap: 12px; }
 .bill-line.total { margin-top: 10px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12); font-size: 1.25rem; font-weight: 900; color: var(--amber); }
 
