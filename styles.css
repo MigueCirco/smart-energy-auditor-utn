@@ -85,3 +85,6 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .quality-table th, .quality-table td { padding: 10px 8px; border-bottom: 1px solid #edf0f4; text-align: right; white-space: nowrap; }
 .quality-table th:first-child, .quality-table td:first-child { text-align: left; }
 .quality-table th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.diagnostic-json-list { display: grid; gap: 12px; margin-top: 12px; }
+.diagnostic-json-section h3 { color: var(--text); margin-bottom: 8px; }
+.diagnostic-json { margin: 0; max-height: 260px; overflow: auto; padding: 12px; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-size: .78rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
