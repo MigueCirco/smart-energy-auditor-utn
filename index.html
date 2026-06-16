@@ -28,10 +28,6 @@
     </header>
 
     <section id="errorBanner" class="error-banner hidden" role="alert"></section>
-    <section id="updateBanner" class="update-banner hidden" role="status">
-      <span>Nueva versión disponible</span>
-      <button id="updateAppButton" type="button">Actualizar</button>
-    </section>
 
     <section id="estado" class="tab-panel active" aria-labelledby="tab-estado">
       <div class="section-heading">
@@ -91,8 +87,7 @@
 
     <section id="calidad" class="tab-panel" aria-labelledby="tab-calidad">
       <div class="section-heading"><p class="eyebrow">Calidad</p><h2>Calidad de energía</h2><p class="subtitle">Análisis FFT, THD y armónicas</p></div>
-      <article class="card info-card">Las armónicas se muestran desde la 2ª hasta la 19ª. La fundamental de 50 Hz se usa como referencia y no se lista como armónica de distorsión.</article>
-      <div id="qualityPanel" class="metric-grid"></div>
+      <div id="qualityPanel" class="metric-grid quality-layout"></div>
     </section>
 
     <section id="historico" class="tab-panel" aria-labelledby="tab-historico">
