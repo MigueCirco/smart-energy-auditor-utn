@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smart Energy Auditor</title>
-  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="manifest" href="manifest.webmanifest?v=0.2.0" />
   <meta name="theme-color" content="#f97316" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png" />
   <link rel="shortcut icon" href="favicon.ico" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=0.2.0" />
 </head>
 <body>
   <main class="app-shell">
@@ -28,6 +28,10 @@
     </header>
 
     <section id="errorBanner" class="error-banner hidden" role="alert"></section>
+    <section id="updateBanner" class="update-banner hidden" role="status">
+      <span>Nueva versión disponible</span>
+      <button id="updateAppButton" type="button">Actualizar</button>
+    </section>
 
     <section id="estado" class="tab-panel active" aria-labelledby="tab-estado">
       <div class="section-heading">
@@ -100,7 +104,7 @@
     <section id="mas" class="tab-panel" aria-labelledby="tab-mas">
       <div class="section-heading"><p class="eyebrow">Más</p><h2>Accesos secundarios</h2></div>
       <div class="more-list">
-        <article class="card more-card"><h3>Diagnóstico técnico</h3><p>Lectura de endpoints actuales: billing.json, tariffProfiles.json y live.json.</p></article>
+        <article class="card more-card"><h3>Diagnóstico técnico</h3><p>Lectura de endpoints actuales: billing.json, tariffProfiles.json y live.json.</p><dl class="data-list diagnostics-list"><div><dt>Front</dt><dd id="frontVersion">sin dato</dd></div><div><dt>Última carga</dt><dd id="frontLoadedAt">sin dato</dd></div></dl><button id="manualUpdateButton" class="secondary-button" type="button">Actualizar app</button></article>
         <article class="card more-card">
           <details class="diagnostics-panel" open>
             <summary>Diagnóstico temporal live.json</summary>
@@ -125,6 +129,6 @@
     <button id="tab-mas" class="nav-item" data-tab="mas">Más</button>
   </nav>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=0.2.0"></script>
 </body>
 </html>
