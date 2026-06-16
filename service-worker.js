@@ -1,10 +1,10 @@
-const CACHE_NAME = "sea-pwa-v0.3.0";
+const CACHE_NAME = "sea-pwa-v0.4.0";
 const PRECACHE_URLS = [
   "./",
   "./index.html",
-  "./styles.css?v=0.3.0",
-  "./app.js?v=0.3.0",
-  "./manifest.webmanifest?v=0.3.0",
+  "./styles.css?v=0.4.0",
+  "./app.js?v=0.4.0",
+  "./manifest.webmanifest?v=0.4.0",
   "./version.json",
   "./assets/icons/apple-touch-icon.png",
   "./assets/icons/favicon-16.png",

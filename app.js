@@ -1,6 +1,6 @@
 const BASE_URL = "https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com";
 const DEVICE_ID = "sea_001";
-const APP_VERSION = "v0.3.0";
+const APP_VERSION = "v0.4.0";
 const APP_VERSION_NUMBER = APP_VERSION.replace(/^v/, "");
 const VERSION_URL = `version.json?v=${APP_VERSION_NUMBER}`;
 const FRONT_LOADED_AT = new Date();
@@ -13,6 +13,8 @@ const THEME_STORAGE_KEY = "sea-theme-preference";
 const THEME_OPTIONS = ["light", "dark", "system"];
 const THEME_LABELS = { light: "Claro", dark: "Oscuro", system: "Sistema" };
 const THEME_COLORS = { light: "#f97316", dark: "#0f172a" };
+const USER_TYPE_STORAGE_KEY = "sea_user_type";
+const RESIDENTIAL_SUBSIDY_STORAGE_KEY = "sea_residential_subsidy";
 
 const PROFILE_LABELS = {
   edet_residential_t1r_n3: "Casa residencial T1R - N3",
@@ -34,12 +36,72 @@ const state = {
   lastLiveChangeAt: null,
   lastLiveFetchAt: null,
   selectedProfileId: null,
+  userType: null,
+  residentialSubsidyType: null,
+  normalizedProfiles: null,
   failedRequests: new Set(),
 };
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 const number = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 });
 const CO2_KG_PER_KWH = 0.4;
+const UNAVAILABLE_REFERENCE = "No disponible en factura de referencia";
+const CONFIGURABLE_LABEL = "Configurable";
+
+const FALLBACK_TARIFF_MODEL = {
+  residential: {
+    userType: "residential",
+    displayName: "Residencial",
+    tariffCode: "T1R",
+    periodType: "bimonthly",
+    periodLabel: "bimestral",
+    energyRateARSperKWh: 110.9610,
+    profileIds: { n3: "edet_residential_t1r_n3", n2: "edet_residential_t1r_n2", none: "edet_residential_t1r_n3" },
+    tiers: [
+      { id: "C1", name: "C1", fromKWh: 0, toKWh: 300 },
+      { id: "C2", name: "C2", fromKWh: 301, toKWh: 500, networkChargeARS: 17445.78 },
+      { id: "C3", name: "C3", fromKWh: 501, toKWh: 1100, networkChargeARS: 36109.10 },
+      { id: "C4", name: "C4", fromKWh: 1101, toKWh: null },
+    ],
+    subsidies: {
+      n3: { label: "N3 - Ingresos medios", shortLabel: "N3", limitKWh: 500, discountPerKWh: 45.0615 },
+      n2: { label: "N2 - Menores ingresos", shortLabel: "N2", limitKWh: 700, discountPerKWh: 58.0938 },
+      none: { label: "Sin subsidio", shortLabel: "Sin subsidio", limitKWh: 0, discountPerKWh: 0 },
+    },
+    taxes: [
+      { label: "IVA consumidor final", rate: 0.21, status: "Estimado" },
+      { label: "Ordenanza municipal / tasa municipal", status: CONFIGURABLE_LABEL },
+      { label: "TIC", status: CONFIGURABLE_LABEL },
+      { label: "Impuesto nacional Ley 25.413", status: UNAVAILABLE_REFERENCE },
+    ],
+  },
+  business: {
+    userType: "business",
+    displayName: "Empresa / Comercio",
+    tariffCode: "T1G",
+    periodType: "monthly",
+    periodLabel: "mensual",
+    energyRateARSperKWh: 112.6003,
+    profileIds: { default: "edet_business_t1g_ri" },
+    tiers: [
+      { id: "C1", name: "C1", fromKWh: 0, toKWh: 15 },
+      { id: "C2", name: "C2", fromKWh: 16, toKWh: 300 },
+      { id: "C3", name: "C3", fromKWh: 301, toKWh: 1000, networkChargeARS: 47601.63 },
+      { id: "C4", name: "C4", fromKWh: 1001, toKWh: null },
+    ],
+    taxes: [
+      { label: "IVA Responsable Inscripto", rate: 0.27, status: "Estimado" },
+      { label: "Percepción ingresos brutos", rate: 0.035, status: "Estimado" },
+      { label: "Percepción RG3337", status: CONFIGURABLE_LABEL },
+      { label: "Ordenanza municipal / tasa municipal", status: CONFIGURABLE_LABEL },
+      { label: "TIC", status: CONFIGURABLE_LABEL },
+      { label: "Impuesto nacional Ley 25.413", status: CONFIGURABLE_LABEL },
+    ],
+  },
+};
+
+const REGULAR_CHARGE_ROWS = ["Inversión distribución", "Inversión transporte", "Aporte TIS", "Ajustes regulados", "Redondeo"];
+const EVENTUAL_CHARGE_ROWS = ["Recargo punitorio", "Deuda anterior", "Ajustes especiales"];
 
 const $ = (id) => document.getElementById(id);
 const valueOrFallback = (value, suffix = "") => value === null || value === undefined || value === "" ? "sin dato" : `${value}${suffix}`;
@@ -139,6 +201,7 @@ async function loadBilling() {
 async function loadTariffProfiles() {
   try {
     state.profiles = await fetchJSON(PROFILES_URL) || {};
+    state.normalizedProfiles = normalizeTariffProfiles(state.profiles);
     updateConnectionStatus();
   } catch (error) {
     markFirebaseError(PROFILES_URL, `No se pudieron leer los perfiles tarifarios: ${error.message}`);
@@ -192,8 +255,102 @@ function getBillingPeriodKWh(live, billing) {
   };
 }
 
+
+function getStoredBillingSelection() {
+  let userType = null;
+  let residentialSubsidyType = null;
+  try {
+    userType = localStorage.getItem(USER_TYPE_STORAGE_KEY);
+    residentialSubsidyType = localStorage.getItem(RESIDENTIAL_SUBSIDY_STORAGE_KEY);
+  } catch (error) {
+    console.warn("No se pudo leer la selección local de tarifa", error);
+  }
+  return {
+    userType: ["residential", "business"].includes(userType) ? userType : null,
+    residentialSubsidyType: ["n3", "n2", "none"].includes(residentialSubsidyType) ? residentialSubsidyType : null,
+  };
+}
+
+function persistBillingSelection() {
+  try {
+    localStorage.setItem(USER_TYPE_STORAGE_KEY, state.userType || "residential");
+    localStorage.setItem(RESIDENTIAL_SUBSIDY_STORAGE_KEY, state.residentialSubsidyType || "n3");
+  } catch (error) {
+    console.warn("No se pudo guardar la selección local de tarifa", error);
+  }
+}
+
+function selectionFromProfileId(profileId) {
+  if (profileId === "edet_residential_t1r_n2") return { userType: "residential", residentialSubsidyType: "n2" };
+  if (profileId === "edet_business_t1g_ri") return { userType: "business", residentialSubsidyType: "n3" };
+  if (profileId === "edet_residential_t1r_n3") return { userType: "residential", residentialSubsidyType: "n3" };
+  return { userType: "residential", residentialSubsidyType: "n3" };
+}
+
+function initializeBillingSelection() {
+  const stored = getStoredBillingSelection();
+  const fromFirebase = selectionFromProfileId(state.billing?.activeProfileId);
+  state.userType = stored.userType || fromFirebase.userType;
+  state.residentialSubsidyType = stored.residentialSubsidyType || fromFirebase.residentialSubsidyType || "n3";
+  syncSelectedProfileIdFromVisualSelection();
+}
+
+function syncSelectedProfileIdFromVisualSelection() {
+  const model = getNormalizedProfileData();
+  if (state.userType === "business") state.selectedProfileId = model.business.profileIds.default;
+  else state.selectedProfileId = model.residential.profileIds[state.residentialSubsidyType || "n3"] || model.residential.profileIds.n3;
+}
+
+function mergeTierFallback(remoteTiers, fallbackTiers) {
+  const remote = normalizeTiers(remoteTiers);
+  return fallbackTiers.map((fallbackTier) => {
+    const match = remote.find((tier) => getTierName(tier) === fallbackTier.name || tier.id === fallbackTier.id) || {};
+    return { ...fallbackTier, ...match, networkChargeARS: toNumber(match.networkChargeARS ?? match.chargeARS ?? match.fixedChargeARS ?? match.amountARS, fallbackTier.networkChargeARS) };
+  });
+}
+
+function normalizeTariffProfiles(profiles = {}) {
+  const residentialN3 = profiles.edet_residential_t1r_n3 || {};
+  const residentialN2 = profiles.edet_residential_t1r_n2 || {};
+  const business = profiles.edet_business_t1g_ri || {};
+  const n3Subsidy = getSubsidyDetails(0, residentialN3);
+  const n2Subsidy = getSubsidyDetails(0, residentialN2);
+  return {
+    residential: {
+      ...FALLBACK_TARIFF_MODEL.residential,
+      energyRateARSperKWh: toNumber(residentialN3.energyChargeARSperKWh ?? residentialN3.energyCharge, FALLBACK_TARIFF_MODEL.residential.energyRateARSperKWh),
+      tiers: mergeTierFallback(residentialN3.networkChargeTiers || residentialN2.networkChargeTiers, FALLBACK_TARIFF_MODEL.residential.tiers),
+      subsidies: {
+        ...FALLBACK_TARIFF_MODEL.residential.subsidies,
+        n3: { ...FALLBACK_TARIFF_MODEL.residential.subsidies.n3, limitKWh: toNumber(residentialN3.subsidy?.limitKWh, FALLBACK_TARIFF_MODEL.residential.subsidies.n3.limitKWh), discountPerKWh: n3Subsidy.discountARSperKWh || FALLBACK_TARIFF_MODEL.residential.subsidies.n3.discountPerKWh },
+        n2: { ...FALLBACK_TARIFF_MODEL.residential.subsidies.n2, limitKWh: toNumber(residentialN2.subsidy?.limitKWh, FALLBACK_TARIFF_MODEL.residential.subsidies.n2.limitKWh), discountPerKWh: n2Subsidy.discountARSperKWh || FALLBACK_TARIFF_MODEL.residential.subsidies.n2.discountPerKWh },
+      },
+    },
+    business: {
+      ...FALLBACK_TARIFF_MODEL.business,
+      energyRateARSperKWh: toNumber(business.energyChargeARSperKWh ?? business.energyCharge, FALLBACK_TARIFF_MODEL.business.energyRateARSperKWh),
+      tiers: mergeTierFallback(business.networkChargeTiers, FALLBACK_TARIFF_MODEL.business.tiers),
+    },
+  };
+}
+
+function getNormalizedProfileData() {
+  if (!state.normalizedProfiles) state.normalizedProfiles = normalizeTariffProfiles(state.profiles);
+  return state.normalizedProfiles;
+}
+
+function getActiveVisualProfile() {
+  const model = getNormalizedProfileData();
+  return state.userType === "business" ? model.business : model.residential;
+}
+
+function getActiveSubsidy() {
+  return getNormalizedProfileData().residential.subsidies[state.residentialSubsidyType || "n3"] || getNormalizedProfileData().residential.subsidies.n3;
+}
+
 function getActiveProfile() {
-  return state.profiles?.[state.selectedProfileId] || null;
+  const profile = getActiveVisualProfile();
+  return profile ? { ...profile, networkChargeTiers: profile.tiers, energyChargeARSperKWh: profile.energyRateARSperKWh } : null;
 }
 
 function normalizeTiers(tiers = []) {
@@ -277,71 +434,159 @@ function getSubsidyDetails(consumptionKWh, profile) {
   };
 }
 
+function tierRangeLabel(tier, periodLabel = "período") {
+  if (!tier) return "sin dato";
+  const from = toNumber(tier.fromKWh ?? tier.minKWh ?? tier.from, 0);
+  const rawTo = tier.toKWh ?? tier.maxKWh ?? tier.to;
+  const to = rawTo === null || rawTo === undefined ? null : toNumber(rawTo, null);
+  return to === null ? `más de ${number.format(from - (from > 0 ? 1 : 0))} kWh/${periodLabel}` : `${number.format(from)}–${number.format(to)} kWh/${periodLabel}`;
+}
+
+function getChargeRows(labels, defaultStatus = CONFIGURABLE_LABEL) {
+  return labels.map((label) => ({ label, amountARS: null, status: defaultStatus }));
+}
+
+function calculateBillBreakdown({ userType, residentialSubsidyType, periodKWh, powerFactor, profileData } = {}) {
+  const model = profileData || getNormalizedProfileData();
+  const type = userType === "business" ? "business" : "residential";
+  const profile = type === "business" ? model.business : model.residential;
+  const safeKWh = Math.max(toNumber(periodKWh, 0), 0);
+  const tiers = normalizeTiers(profile.tiers);
+  const currentTier = getCurrentTier(safeKWh, tiers) || tiers[0];
+  const nextTier = getNextTier(currentTier, tiers);
+  const from = toNumber(currentTier?.fromKWh ?? currentTier?.minKWh ?? currentTier?.from, 0);
+  const to = getTierLimit(currentTier);
+  const span = Number.isFinite(to) ? Math.max(to - from, 1) : Math.max(safeKWh - from, 1);
+  const tierProgressPct = clamp(((safeKWh - from) / span) * 100, 0, 100);
+  const kWhToNextTier = Number.isFinite(to) ? Math.max(to - safeKWh, 0) : null;
+  const energyRateARSperKWh = toNumber(profile.energyRateARSperKWh, 0);
+  const grossEnergyChargeARS = safeKWh * energyRateARSperKWh;
+  const subsidy = type === "residential" ? profile.subsidies[residentialSubsidyType || "n3"] || profile.subsidies.n3 : null;
+  const subsidyApplies = type === "residential" && subsidy && subsidy.discountPerKWh > 0 && subsidy.limitKWh > 0;
+  const subsidizedKWh = subsidyApplies ? Math.min(safeKWh, subsidy.limitKWh) : 0;
+  const subsidyAmountARS = subsidizedKWh * toNumber(subsidy?.discountPerKWh, 0);
+  const netEnergyChargeARS = Math.max(grossEnergyChargeARS - subsidyAmountARS, 0);
+  const networkChargeARS = toNumber(currentTier?.networkChargeARS ?? currentTier?.chargeARS ?? currentTier?.fixedChargeARS ?? currentTier?.amountARS, null);
+  const networkChargeAvailable = networkChargeARS !== null;
+  const subtotalBeforeTaxesARS = netEnergyChargeARS + (networkChargeAvailable ? networkChargeARS : 0);
+  const taxRates = (profile.taxes || []).filter((tax) => Number.isFinite(Number(tax.rate)));
+  const estimatedTaxesARS = taxRates.reduce((sum, tax) => sum + subtotalBeforeTaxesARS * Number(tax.rate), 0);
+  const missingOrConfigurableCharges = [
+    ...REGULAR_CHARGE_ROWS,
+    ...EVENTUAL_CHARGE_ROWS,
+    ...(profile.taxes || []).filter((tax) => !Number.isFinite(Number(tax.rate))).map((tax) => tax.label),
+    ...(networkChargeAvailable ? [] : [`Cargo de red ${getTierName(currentTier)}`]),
+  ];
+  const pf = toNumber(powerFactor, null);
+  return {
+    userType: type,
+    displayName: profile.displayName,
+    tariffCode: profile.tariffCode,
+    periodType: profile.periodType,
+    periodLabel: profile.periodLabel,
+    periodKWh: safeKWh,
+    currentTier,
+    nextTier,
+    currentTierName: getTierName(currentTier),
+    nextTierName: nextTier ? getTierName(nextTier) : null,
+    kWhToNextTier,
+    tierProgressPct,
+    tierRangeLabel: tierRangeLabel(currentTier, profile.periodLabel),
+    energyRateARSperKWh,
+    grossEnergyChargeARS,
+    subsidyApplies,
+    subsidyLabel: subsidyApplies ? subsidy.label : (type === "business" ? "No aplica" : subsidy?.label || "Sin subsidio"),
+    subsidyLimitKWh: subsidy?.limitKWh || 0,
+    subsidyDiscountARSperKWh: subsidy?.discountPerKWh || 0,
+    subsidizedKWh,
+    subsidyAmountARS,
+    netEnergyChargeARS,
+    networkChargeARS,
+    networkChargeAvailable,
+    networkExplanation: "Este cargo depende del tramo de consumo del período. No crece kWh por kWh, sino que cambia al pasar de categoría.",
+    otherRegularCharges: getChargeRows(REGULAR_CHARGE_ROWS),
+    otherEventualCharges: getChargeRows(EVENTUAL_CHARGE_ROWS),
+    penalties: {
+      powerFactor: pf,
+      hasPowerFactor: pf !== null,
+      lowPowerFactor: pf !== null && pf < 0.92,
+      message: pf === null ? "Sin dato de factor de potencia en tiempo real" : pf < 0.92 ? "Riesgo de recargo por bajo factor de potencia" : "Factor de potencia dentro del límite de referencia",
+    },
+    taxes: profile.taxes || [],
+    subtotalBeforeTaxesARS,
+    estimatedTaxesARS,
+    estimatedTotalARS: subtotalBeforeTaxesARS + estimatedTaxesARS,
+    knownChargesTotalARS: grossEnergyChargeARS - subsidyAmountARS + (networkChargeAvailable ? networkChargeARS : 0) + estimatedTaxesARS,
+    missingOrConfigurableCharges,
+  };
+}
+
 function calculateEstimatedBill(consumptionKWh, profile, tier) {
-  const energyRate = toNumber(profile?.energyChargeARSperKWh ?? profile?.energyCharge, 0);
-  const grossEnergy = consumptionKWh * energyRate;
-  const subsidy = getSubsidyDetails(consumptionKWh, profile);
-  const networkCharge = toNumber(tier?.chargeARS ?? tier?.fixedChargeARS ?? tier?.networkChargeARS ?? tier?.amountARS, 0);
-  const otherCharges = Object.values(profile?.otherCharges || {}).reduce((sum, charge) => sum + toNumber(typeof charge === "object" ? charge.amountARS ?? charge.value : charge, 0), 0);
-  const subtotal = grossEnergy - subsidy.amount + networkCharge + otherCharges;
-  return { grossEnergy, subsidy, networkCharge, otherCharges, subtotal, total: subtotal };
+  const breakdown = calculateBillBreakdown({ userType: state.userType, residentialSubsidyType: state.residentialSubsidyType, periodKWh: consumptionKWh, powerFactor: readLivePathNumber("electrical.pf", null), profileData: getNormalizedProfileData() });
+  return {
+    grossEnergy: breakdown.grossEnergyChargeARS,
+    subsidy: { amount: breakdown.subsidyAmountARS, subsidizedKWh: breakdown.subsidizedKWh, discountARSperKWh: breakdown.subsidyDiscountARSperKWh, limitKWh: breakdown.subsidyLimitKWh, applies: breakdown.subsidyApplies, detectedField: "normalized" },
+    networkCharge: breakdown.networkChargeAvailable ? breakdown.networkChargeARS : 0,
+    otherCharges: 0,
+    subtotal: breakdown.subtotalBeforeTaxesARS,
+    total: breakdown.estimatedTotalARS,
+  };
+}
+
+function setBillingSelection(userType, subsidyType = state.residentialSubsidyType || "n3") {
+  state.userType = userType === "business" ? "business" : "residential";
+  state.residentialSubsidyType = ["n3", "n2", "none"].includes(subsidyType) ? subsidyType : "n3";
+  syncSelectedProfileIdFromVisualSelection();
+  persistBillingSelection();
+  const fallback = state.userType === "business" ? INITIAL_CONSUMPTION.edet_business_t1g_ri : INITIAL_CONSUMPTION[state.selectedProfileId];
+  if ($("consumptionInput") && !getBillingPeriodKWh(state.live, state.billing).hasLiveTotal) $("consumptionInput").value = fallback ?? 0;
+  renderAll();
 }
 
 function renderProfileSelector() {
-  const selector = $("profileSelector");
-  const available = state.billing?.frontSelection?.availableProfiles || Object.keys(state.profiles || {});
-  selector.innerHTML = "";
-
-  available.forEach((profileId) => {
-    const option = document.createElement("option");
-    option.value = profileId;
-    option.textContent = PROFILE_LABELS[profileId] || profileId;
-    selector.appendChild(option);
+  const userTypeSelector = $("userTypeSelector");
+  const subsidySelector = $("residentialSubsidySelector");
+  if (!userTypeSelector || !subsidySelector) return;
+  userTypeSelector.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.userType === state.userType);
+    button.setAttribute("aria-pressed", String(button.dataset.userType === state.userType));
+    button.onclick = () => setBillingSelection(button.dataset.userType);
   });
+  subsidySelector.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.subsidy === state.residentialSubsidyType);
+    button.setAttribute("aria-pressed", String(button.dataset.subsidy === state.residentialSubsidyType));
+    button.onclick = () => setBillingSelection("residential", button.dataset.subsidy);
+  });
+  subsidySelector.classList.toggle("hidden", state.userType === "business");
+  $("businessSubsidyNotice")?.classList.toggle("hidden", state.userType !== "business");
+}
 
-  if (!available.length) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "sin dato";
-    selector.appendChild(option);
-    selector.disabled = true;
-  } else {
-    selector.disabled = false;
-  }
-
-  state.selectedProfileId = state.selectedProfileId || available[0] || null;
-  selector.value = state.selectedProfileId || "";
-  selector.addEventListener("change", () => {
-    state.selectedProfileId = selector.value;
-    $("projectionPanel").innerHTML = "";
-    $("consumptionInput").value = INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0;
-    renderAll();
+function getCurrentBreakdown() {
+  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
+  return calculateBillBreakdown({
+    userType: state.userType,
+    residentialSubsidyType: state.residentialSubsidyType,
+    periodKWh: billingKWh.periodKWh,
+    powerFactor: readLivePathNumber("electrical.pf", null),
+    profileData: getNormalizedProfileData(),
   });
 }
 
 function renderTierCard() {
-  const profile = getActiveProfile();
-  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
-  const consumption = billingKWh.periodKWh;
-  const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
-  const from = toNumber(tier?.fromKWh ?? tier?.minKWh ?? tier?.from, 0);
-  const rawTo = tier?.toKWh ?? tier?.maxKWh ?? tier?.to;
-  const to = rawTo === null || rawTo === undefined ? Infinity : toNumber(rawTo, from);
-  const span = Number.isFinite(to) ? Math.max(to - from, 1) : Math.max(consumption - from, 1);
-  const progress = Math.min(Math.max(((consumption - from) / span) * 100, 0), 100);
-  const remaining = Number.isFinite(to) ? Math.max(to - consumption, 0) : null;
-  const level = progress >= 95 ? "critical" : progress >= 80 ? "warning" : "";
-
+  const breakdown = getCurrentBreakdown();
+  const level = breakdown.tierProgressPct >= 95 ? "critical" : breakdown.tierProgressPct >= 80 ? "warning" : "";
   $("tierCard").innerHTML = `
-    <h2>Categoría tarifaria</h2>
-    <p class="metric-large">${valueOrFallback(tier?.name || tier?.label || tier?.category || tier?.id || `Tramo ${tier?.index + 1 || ""}`)}</p>
+    <h2>Tu consumo y categoría</h2>
+    <p class="metric-large">${breakdown.currentTierName}</p>
     <dl class="data-list">
-      <div><dt>Rango de kWh</dt><dd>${number.format(from)} - ${Number.isFinite(to) ? number.format(to) : "sin límite"}</dd></div>
-      <div><dt>Consumo del período</dt><dd>${number.format(consumption)} kWh</dd></div>
-      <div><dt>kWh restantes</dt><dd>${remaining === null ? "sin límite" : `${number.format(remaining)} kWh`}</dd></div>
-      <div><dt>Avance del tramo</dt><dd>${number.format(progress)}%</dd></div>
+      <div><dt>Consumo del período</dt><dd>${number.format(breakdown.periodKWh)} kWh</dd></div>
+      <div><dt>Rango de la categoría</dt><dd>${breakdown.tierRangeLabel}</dd></div>
+      <div><dt>Próxima categoría</dt><dd>${breakdown.nextTierName || "Última categoría"}</dd></div>
+      <div><dt>kWh restantes para el salto</dt><dd>${breakdown.kWhToNextTier === null ? "sin límite" : `${number.format(breakdown.kWhToNextTier)} kWh`}</dd></div>
+      <div><dt>Avance del tramo</dt><dd>${number.format(breakdown.tierProgressPct)}%</dd></div>
     </dl>
-    <div class="progress-track"><div class="progress-bar ${level}" style="width:${progress}%"></div></div>
+    <div class="progress-track"><div class="progress-bar ${level}" style="width:${breakdown.tierProgressPct}%"></div></div>
+    <p class="projection-note">Este cargo cambia por escalones. Si superás el límite de tu categoría, cambia el cargo de red.</p>
   `;
 }
 
@@ -592,37 +837,88 @@ function setupNavigation() {
   });
 }
 
+function formatMoneyMaybe(value, available = true) {
+  return available && value !== null && value !== undefined ? money.format(value) : UNAVAILABLE_REFERENCE;
+}
+
+function renderChargeRows(rows) {
+  return rows.map((row) => `<div class="bill-line"><span class="label">${row.label}</span><strong>${row.amountARS !== null ? money.format(row.amountARS) : row.status}</strong></div>`).join("");
+}
+
+function renderTaxRows(taxes, subtotal) {
+  return taxes.map((tax) => {
+    const hasRate = Number.isFinite(Number(tax.rate));
+    const value = hasRate ? money.format(subtotal * Number(tax.rate)) : tax.status;
+    const rate = hasRate ? ` ${number.format(Number(tax.rate) * 100)}%` : "";
+    return `<div class="bill-line"><span class="label">${tax.label}${rate}</span><strong>${value}</strong></div>`;
+  }).join("");
+}
+
 function renderEstimatedBill() {
-  const profile = getActiveProfile();
-  const billingKWh = getBillingPeriodKWh(state.live, state.billing);
-  const consumption = billingKWh.periodKWh;
-  const tier = getCurrentTier(consumption, profile?.networkChargeTiers);
-  const bill = calculateEstimatedBill(consumption, profile || {}, tier || {});
-  const hasProfile = Boolean(profile);
-  const moneyOrFallback = (value) => hasProfile ? money.format(value) : "sin dato";
+  const breakdown = getCurrentBreakdown();
+  const subsidyFormula = breakdown.subsidyApplies
+    ? `${number.format(breakdown.subsidizedKWh)} kWh × ${money.format(breakdown.subsidyDiscountARSperKWh)}/kWh = -${money.format(breakdown.subsidyAmountARS)}`
+    : "Subsidio residencial: no aplica";
   $("estimatedBill").innerHTML = `
-    <h2>Estimación económica</h2>
-    <p class="calculation-warning">Estimación orientativa basada en el consumo del período tarifario y perfiles cargados desde facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
-    <div class="bill-lines">
-      <div class="bill-line"><span class="label">Cargo de energía bruto</span><strong>${moneyOrFallback(bill.grossEnergy)}</strong></div>
-      <div class="bill-line"><span class="label">Subsidio estimado</span><strong>${hasProfile ? `-${money.format(bill.subsidy.amount)}` : "sin dato"}</strong></div>
-      <div class="bill-line"><span class="label">Detalle subsidio</span><strong>${hasProfile && bill.subsidy.applies ? `${number.format(bill.subsidy.subsidizedKWh)} kWh × ${money.format(bill.subsidy.discountARSperKWh)}/kWh` : "No aplica"}</strong></div>
-      <div class="bill-line"><span class="label">Cargo de red</span><strong>${moneyOrFallback(bill.networkCharge)}</strong></div>
-      <div class="bill-line"><span class="label">Otros cargos fijos</span><strong>${moneyOrFallback(bill.otherCharges)}</strong></div>
-      <div class="bill-line"><span class="label">Subtotal aproximado</span><strong>${moneyOrFallback(bill.subtotal)}</strong></div>
-      <div class="bill-line total"><span>Total aproximado</span><strong>${moneyOrFallback(bill.total)}</strong></div>
-    </div>
-    <details class="diagnostics-panel">
-      <summary>Diagnóstico de subsidio</summary>
-      <dl class="data-list diagnostics-list">
-        <div><dt>activeProfileId</dt><dd>${valueOrFallback(state.selectedProfileId)}</dd></div>
-        <div><dt>Consumo del período usado</dt><dd>${number.format(consumption)} kWh</dd></div>
-        <div><dt>Campo detectado</dt><dd>${hasProfile ? valueOrFallback(bill.subsidy.detectedField, "") : "sin dato"}</dd></div>
-        <div><dt>Descuento usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.discountARSperKWh)} $/kWh` : "sin dato"}</dd></div>
-        <div><dt>limitKWh usado</dt><dd>${hasProfile ? `${number.format(bill.subsidy.limitKWh)} kWh` : "sin dato"}</dd></div>
-        <div><dt>kWh subsidiados</dt><dd>${hasProfile ? `${number.format(bill.subsidy.subsidizedKWh)} kWh` : "sin dato"}</dd></div>
-      </dl>
-    </details>`;
+    <div class="bill-education-grid">
+      <article class="bill-section-card">
+        <h2>Qué pagás por consumir</h2>
+        <p class="formula">${number.format(breakdown.periodKWh)} kWh × ${money.format(breakdown.energyRateARSperKWh)}/kWh = ${money.format(breakdown.grossEnergyChargeARS)}</p>
+        <p class="subtitle">Este cargo es proporcional a tu consumo. Se calcula multiplicando los kWh consumidos por el precio de energía del perfil tarifario.</p>
+      </article>
+      <article class="bill-section-card">
+        <h2>Subsidio o descuento</h2>
+        <p class="formula ${breakdown.subsidyApplies ? "discount" : ""}">${subsidyFormula}</p>
+        <dl class="data-list">
+          <div><dt>Tipo</dt><dd>${breakdown.subsidyLabel}</dd></div>
+          <div><dt>Límite</dt><dd>${breakdown.subsidyLimitKWh ? `${number.format(breakdown.subsidyLimitKWh)} kWh` : "No aplica"}</dd></div>
+          <div><dt>kWh subsidiados</dt><dd>${number.format(breakdown.subsidizedKWh)} kWh</dd></div>
+        </dl>
+        <p class="subtitle">El subsidio reduce parte del cargo de energía hasta un límite determinado. El consumo que supera ese límite se cobra sin ese descuento.</p>
+      </article>
+      <article class="bill-section-card">
+        <h2>Uso de red y cargos por escala</h2>
+        <dl class="data-list">
+          <div><dt>Categoría actual</dt><dd>${breakdown.currentTierName}</dd></div>
+          <div><dt>Rango</dt><dd>${breakdown.tierRangeLabel}</dd></div>
+          <div><dt>Cargo de red</dt><dd>${formatMoneyMaybe(breakdown.networkChargeARS, breakdown.networkChargeAvailable)}</dd></div>
+        </dl>
+        <p class="subtitle">Este cargo depende de tu categoría de consumo. Cambia por escalones: si superás el límite del tramo actual, pasás a una categoría superior.</p>
+      </article>
+      <details class="bill-section-card" open>
+        <summary>Otros cargos de factura</summary>
+        <h3>Cargos habituales</h3>
+        <div class="bill-lines">${renderChargeRows(breakdown.otherRegularCharges)}</div>
+        <h3>Cargos eventuales</h3>
+        <div class="bill-lines">${renderChargeRows(breakdown.otherEventualCharges)}</div>
+        <p class="subtitle">Estos cargos pueden aparecer en la factura aunque no representen energía consumida directamente. Algunos son regulados y otros dependen de ajustes, mora o deuda anterior.</p>
+      </details>
+      <details class="bill-section-card" open>
+        <summary>Impuestos y tasas</summary>
+        <div class="bill-lines">${renderTaxRows(breakdown.taxes, breakdown.subtotalBeforeTaxesARS)}</div>
+        <p class="subtitle">Los impuestos y tasas se agregan sobre la liquidación. Pueden variar según el tipo de usuario y la normativa vigente.</p>
+      </details>
+      <article class="bill-section-card alerts-list">
+        <h2>Alertas útiles</h2>
+        <div class="alert ${breakdown.kWhToNextTier !== null && breakdown.kWhToNextTier <= 100 ? "warning" : "ok"}">Te quedan ${breakdown.kWhToNextTier === null ? "sin límite de" : `${number.format(breakdown.kWhToNextTier)} kWh antes de pasar a ${breakdown.nextTierName || "la próxima categoría"}`}</div>
+        <div class="alert info">Al ritmo actual podrías pasar de categoría si la proyección supera el límite del tramo.</div>
+        <div class="alert ${breakdown.penalties.lowPowerFactor ? "warning" : "info"}">${breakdown.penalties.message}. Un factor de potencia bajo puede generar recargos. El límite de referencia usado por la app es 0.92.</div>
+        <div class="alert info">Hay conceptos configurables que pueden cambiar el total final.</div>
+      </article>
+      <article class="bill-total-card">
+        <h2>Total estimado</h2>
+        <div class="bill-lines">
+          <div class="bill-line"><span class="label">Energía bruta</span><strong>${money.format(breakdown.grossEnergyChargeARS)}</strong></div>
+          <div class="bill-line"><span class="label">Subsidio/descuento</span><strong>${breakdown.subsidyAmountARS ? `-${money.format(breakdown.subsidyAmountARS)}` : "No aplica"}</strong></div>
+          <div class="bill-line"><span class="label">Cargo de red</span><strong>${formatMoneyMaybe(breakdown.networkChargeARS, breakdown.networkChargeAvailable)}</strong></div>
+          <div class="bill-line"><span class="label">Otros cargos conocidos</span><strong>${money.format(0)}</strong></div>
+          <div class="bill-line"><span class="label">Impuestos estimados</span><strong>${money.format(breakdown.estimatedTaxesARS)}</strong></div>
+          <div class="bill-line total"><span>Total estimado</span><strong>${money.format(breakdown.estimatedTotalARS)}</strong></div>
+        </div>
+        <p class="calculation-warning">Estimación orientativa basada en perfiles tarifarios y facturas de referencia. No reemplaza la liquidación oficial de la distribuidora.</p>
+        <p class="subtitle">Algunos impuestos, tasas, ajustes o recargos pueden variar según la factura y no están completamente estimados.</p>
+      </article>
+    </div>`;
 }
 
 
@@ -729,10 +1025,11 @@ function renderLivePanel() {
 }
 
 function renderConnectionPanel() {
-  const profile = getActiveProfile();
+  const profile = getActiveVisualProfile();
   $("activeProfileId").textContent = valueOrFallback(state.billing?.activeProfileId);
-  $("userType").textContent = valueOrFallback(profile?.userType || profile?.customerType);
-  $("tariffCode").textContent = valueOrFallback(profile?.tariffCode || profile?.code);
+  $("userType").textContent = valueOrFallback(profile?.displayName);
+  $("tariffCode").textContent = valueOrFallback(profile?.tariffCode);
+  if ($("periodType")) $("periodType").textContent = valueOrFallback(profile?.periodLabel);
 }
 
 function renderTariffDiagnostics() {
@@ -751,6 +1048,7 @@ function renderTariffDiagnostics() {
 }
 
 function renderAll() {
+  renderProfileSelector();
   renderConnectionPanel();
   renderTierCard();
   renderEstimatedBill();
@@ -880,6 +1178,7 @@ async function init() {
   window.setInterval(checkVersionFile, SERVICE_WORKER_UPDATE_INTERVAL_MS);
   $("consumptionInput").addEventListener("input", renderAll);
   await Promise.all([loadBilling(), loadTariffProfiles()]);
+  initializeBillingSelection();
   renderProfileSelector();
   $("consumptionInput").value = INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0;
   renderAll();
