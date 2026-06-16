@@ -26,9 +26,15 @@ const state = {
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 const number = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 });
+const CO2_KG_PER_KWH = 0.4;
 
 const $ = (id) => document.getElementById(id);
 const valueOrFallback = (value, suffix = "") => value === null || value === undefined || value === "" ? "sin dato" : `${value}${suffix}`;
+const formatMeasurement = (value, suffix = "") => value === null || value === undefined || value === "" || Number.isNaN(Number(value)) ? "sin dato" : `${number.format(Number(value))}${suffix}`;
+const readLiveNumber = (...keys) => {
+  const key = keys.find((candidate) => state.live?.[candidate] !== undefined && state.live?.[candidate] !== null && state.live?.[candidate] !== "");
+  return key ? toNumber(state.live[key], null) : null;
+};
 const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
 async function fetchJSON(url) {
@@ -285,6 +291,100 @@ function calculateSavingsScenario(consumptionKWh, profile, elapsedDays, totalDay
   };
 }
 
+function getAuditorMetrics() {
+  const profile = getActiveProfile();
+  const inputConsumption = toNumber($("consumptionInput")?.value, INITIAL_CONSUMPTION[state.selectedProfileId] ?? 0);
+  const energy = readLiveNumber("energy_kwh", "kwh", "energy_total_kwh", "active_energy_kwh") ?? inputConsumption;
+  const tier = getCurrentTier(energy, profile?.networkChargeTiers);
+  const bill = calculateEstimatedBill(energy, profile || {}, tier || {});
+  const totalDays = getDefaultTotalDays(profile);
+  const elapsedDays = Math.max(Math.ceil(totalDays / 2), 1);
+  const projection = calculateProjection(energy, tier, profile || {}, elapsedDays, totalDays);
+  const projectedTier = getCurrentTier(projection.projectedConsumption, profile?.networkChargeTiers);
+  const projectedBill = calculateEstimatedBill(projection.projectedConsumption, profile || {}, projectedTier || {});
+  return { profile, energy, tier, bill, totalDays, elapsedDays, projection, projectedBill };
+}
+
+function getQualityStatus() {
+  const thdV = readLiveNumber("thd_v_pct", "thd_voltage_pct");
+  const thdI = readLiveNumber("thd_i_pct", "thd_current_pct");
+  if ((thdV !== null && thdV >= 8) || (thdI !== null && thdI >= 25)) return "crítico";
+  if ((thdV !== null && thdV >= 5) || (thdI !== null && thdI >= 15)) return "revisar";
+  return "normal";
+}
+
+function getGeneralAuditorStatus() {
+  if (state.failedRequests.size > 0) return ["revisar", "status-warning"];
+  const pf = readLiveNumber("pf", "power_factor");
+  const freq = readLiveNumber("frequency_hz", "freq_hz");
+  if ((pf !== null && pf < 0.85) || (freq !== null && (freq < 49 || freq > 51)) || getQualityStatus() === "crítico") return ["revisar", "status-critical"];
+  if ((pf !== null && pf < 0.92) || getQualityStatus() === "revisar") return ["advertencia", "status-warning"];
+  return ["normal", "status-ok"];
+}
+
+function renderStatePanel() {
+  const { energy, bill } = getAuditorMetrics();
+  const [label, statusClass] = getGeneralAuditorStatus();
+  $("statePower").textContent = formatMeasurement(readLiveNumber("p_w", "power_w", "active_power_w"), " W");
+  $("stateVrms").textContent = formatMeasurement(readLiveNumber("vrms", "voltage_rms"), " V");
+  $("stateIrms").textContent = formatMeasurement(readLiveNumber("irms", "current_rms"), " A");
+  $("statePf").textContent = formatMeasurement(readLiveNumber("pf", "power_factor"));
+  $("stateFrequency").textContent = formatMeasurement(readLiveNumber("frequency_hz", "freq_hz"), " Hz");
+  $("stateEnergy").textContent = formatMeasurement(energy, " kWh");
+  $("stateCost").textContent = getActiveProfile() ? money.format(bill.total) : "sin dato";
+  const status = $("generalStatus");
+  status.textContent = `Estado general: ${label}`;
+  status.className = `general-status ${statusClass}`;
+}
+
+function renderConsumptionPanel() {
+  const { energy, bill, projection, projectedBill, elapsedDays } = getAuditorMetrics();
+  const daily = energy / Math.max(elapsedDays, 1);
+  const items = [
+    ["Consumo acumulado", `${number.format(energy)} kWh`],
+    ["Consumo diario promedio", `${number.format(daily)} kWh/día`],
+    ["Proyección al cierre", `${number.format(projection.projectedConsumption)} kWh`],
+    ["Costo actual estimado", getActiveProfile() ? money.format(bill.total) : "sin dato"],
+    ["Costo proyectado", getActiveProfile() ? money.format(projectedBill.total) : "sin dato"],
+    ["CO₂ estimado", `${number.format(energy * CO2_KG_PER_KWH)} kg`],
+  ];
+  $("consumptionCards").innerHTML = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+}
+
+function renderQualityPanel() {
+  const status = getQualityStatus();
+  const harmonics = state.live?.harmonics || state.live?.harmonics_available || null;
+  const items = [
+    ["THD de tensión", formatMeasurement(readLiveNumber("thd_v_pct", "thd_voltage_pct"), "%")],
+    ["THD de corriente", formatMeasurement(readLiveNumber("thd_i_pct", "thd_current_pct"), "%")],
+    ["Frecuencia fundamental", formatMeasurement(readLiveNumber("frequency_hz", "fundamental_frequency_hz", "freq_hz"), " Hz")],
+    ["Estado de calidad", status],
+    ["Armónicas disponibles", harmonics ? (Array.isArray(harmonics) ? harmonics.join(", ") : "disponibles") : "sin dato"],
+  ];
+  $("qualityPanel").innerHTML = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+}
+
+function renderHistoryPanel() {
+  const { energy, bill } = getAuditorMetrics();
+  const items = [
+    ["Resumen histórico", state.live?.history_summary ? "disponible" : "preparado"],
+    ["Energía acumulada", `${number.format(energy)} kWh`],
+    ["Costo acumulado", getActiveProfile() ? money.format(bill.total) : "sin dato"],
+    ["CO₂ estimado", `${number.format(energy * CO2_KG_PER_KWH)} kg`],
+  ];
+  $("historyPanel").innerHTML = items.map(([label, value]) => `<article class="card mini-card"><span>${label}</span><strong>${value}</strong></article>`).join("");
+}
+
+function setupNavigation() {
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
+      document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === button.dataset.tab));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+}
+
 function renderEstimatedBill() {
   const profile = getActiveProfile();
   const consumption = toNumber($("consumptionInput").value, 0);
@@ -406,6 +506,7 @@ function renderAlerts() {
 }
 
 function renderLivePanel() {
+  if (!$("livePanel")) return;
   const fields = [
     ["vrms", "Vrms", " V"], ["irms", "Irms", " A"], ["p_w", "Potencia activa", " W"], ["s_va", "Potencia aparente", " VA"],
     ["pf", "Factor de potencia", ""], ["frequency_hz", "Frecuencia", " Hz"], ["thd_v_pct", "THD tensión", "%"], ["thd_i_pct", "THD corriente", "%"],
@@ -430,6 +531,10 @@ function renderAll() {
   renderProjectionPanel();
   renderAlerts();
   renderLivePanel();
+  renderStatePanel();
+  renderConsumptionPanel();
+  renderQualityPanel();
+  renderHistoryPanel();
 }
 
 function updateConnectionStatus() {
@@ -447,6 +552,7 @@ function showError(message) {
 }
 
 async function init() {
+  setupNavigation();
   $("consumptionInput").addEventListener("input", renderAll);
   await Promise.all([loadBilling(), loadTariffProfiles()]);
   renderProfileSelector();
