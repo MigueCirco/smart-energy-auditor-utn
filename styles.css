@@ -90,3 +90,28 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
 .diagnostic-json-list { display: grid; gap: 12px; margin-top: 12px; }
 .diagnostic-json-section h3 { color: var(--text); margin-bottom: 8px; }
 .diagnostic-json { margin: 0; max-height: 260px; overflow: auto; padding: 12px; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-size: .78rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+
+.quality-card { position: relative; overflow: hidden; }
+.quality-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--orange); }
+.quality-card small { color: var(--muted); font-weight: 800; text-transform: capitalize; }
+.quality-normal::before, .quality-ok::before { background: var(--green); }
+.quality-warning::before { background: var(--orange); }
+.quality-critical::before { background: var(--red); }
+.quality-info::before { background: var(--blue); }
+.quality-unknown::before, .quality-loading::before { background: #94a3b8; }
+.spectrum-card { gap: 14px; }
+.harmonic-spectrum { display: grid; gap: 12px; width: 100%; }
+.spectrum-row { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: center; padding: 10px; border: 1px solid #edf0f4; border-radius: 16px; background: #f8fafc; }
+.spectrum-label { color: var(--text); font-weight: 950; text-align: center; }
+.spectrum-bars { display: grid; gap: 7px; min-width: 0; }
+.spectrum-bar-line { display: grid; grid-template-columns: 64px minmax(72px, 1fr) 72px; gap: 8px; align-items: center; color: var(--muted); font-size: .78rem; font-weight: 800; }
+.spectrum-bar-line strong { color: var(--text); font-size: .82rem; text-align: right; }
+.spectrum-track { height: 10px; overflow: hidden; border-radius: 999px; background: #e8edf4; }
+.spectrum-bar { height: 100%; min-width: 2px; border-radius: inherit; transition: width .25s ease; }
+.spectrum-bar.voltage { background: linear-gradient(90deg, #60a5fa, var(--blue)); }
+.spectrum-bar.current { background: linear-gradient(90deg, #fdba74, var(--orange)); }
+
+@media (min-width: 760px) {
+  .spectrum-row { grid-template-columns: 56px 1fr; padding: 12px; }
+  .spectrum-bar-line { grid-template-columns: 82px minmax(120px, 1fr) 86px; }
+}
