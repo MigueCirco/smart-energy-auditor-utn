@@ -115,3 +115,11 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px v
   .spectrum-row { grid-template-columns: 56px 1fr; padding: 12px; }
   .spectrum-bar-line { grid-template-columns: 82px minmax(120px, 1fr) 86px; }
 }
+.update-banner { margin: 12px 0; padding: 12px 14px; border-radius: 18px; background: #eef6ff; border: 1px solid #cfe3ff; color: var(--blue); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 900; }
+.update-banner button, .secondary-button { border: 0; border-radius: 14px; background: var(--blue); color: #fff; font: inherit; font-size: .82rem; font-weight: 900; padding: 10px 12px; cursor: pointer; }
+.secondary-button { width: 100%; margin-top: 12px; background: var(--orange); }
+.spectrum-scale-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.spectrum-scale-list span { border-radius: 999px; background: #eef6ff; color: var(--blue); padding: 7px 10px; font-size: .78rem; font-weight: 900; }
+.spectrum-note { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.35; }
+.spectrum-bar-line.out-of-scale .spectrum-track { outline: 2px solid #fed7c7; outline-offset: 2px; }
+.spectrum-bar-line strong em { display: block; color: var(--red); font-size: .68rem; font-style: normal; font-weight: 950; line-height: 1.1; text-transform: uppercase; }

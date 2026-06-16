@@ -1,5 +1,11 @@
 const BASE_URL = "https://smart-energy-auditor-929f3-default-rtdb.firebaseio.com";
 const DEVICE_ID = "sea_001";
+const APP_VERSION = "v0.2.0";
+const APP_VERSION_NUMBER = APP_VERSION.replace(/^v/, "");
+const VERSION_URL = `version.json?v=${APP_VERSION_NUMBER}`;
+const FRONT_LOADED_AT = new Date();
+const HARMONIC_SCALES = { voltage: 20, current: 100 };
+const SERVICE_WORKER_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 const BILLING_URL = `${BASE_URL}/devices/${DEVICE_ID}/config/billing.json`;
 const PROFILES_URL = `${BASE_URL}/tariffProfiles.json`;
 const LIVE_URL = `${BASE_URL}/devices/${DEVICE_ID}/live.json`;
@@ -42,6 +48,7 @@ const hasLiveValue = (path) => !isMissing(getLiveValue(path, null));
 const readLivePathNumber = (path, fallback = null) => toNumber(getLiveValue(path, null), fallback);
 const formatDateTime = (date) => date ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "medium" }).format(date) : "sin dato";
 const formatMeasurement = (value, suffix = "") => isMissing(value) || Number.isNaN(Number(value)) ? "sin dato" : `${number.format(Number(value))}${suffix}`;
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 const readLiveNumber = (...keys) => {
   const key = keys.find((candidate) => getLiveValue(candidate) !== undefined && getLiveValue(candidate) !== null && getLiveValue(candidate) !== "");
   return key ? toNumber(getLiveValue(key), null) : null;
@@ -449,7 +456,6 @@ function renderQualityPanel() {
   const harmonicsV = Array.isArray(getLiveValue("pq.harmonics_v_pct")) ? getLiveValue("pq.harmonics_v_pct") : [];
   const harmonicsI = Array.isArray(getLiveValue("pq.harmonics_i_pct")) ? getLiveValue("pq.harmonics_i_pct") : [];
   const rowCount = Math.max(harmonicsV.length, harmonicsI.length);
-  const maxValue = Math.max(1, ...harmonicsV, ...harmonicsI);
   const cardItems = [
     ["THD tensión", formatMeasurement(thdV, "%"), thdVStatus.label, thdVStatus.level],
     ["THD corriente", formatMeasurement(thdI, "%"), thdIStatus.label, thdIStatus.level],
@@ -469,13 +475,24 @@ function renderQualityPanel() {
     const current = toNumber(harmonicsI[index], null);
     return { harmonicNumber, frequency, voltage, current };
   });
+  const renderSpectrumBar = (label, value, type) => {
+    const scaleMax = HARMONIC_SCALES[type];
+    const numericValue = toNumber(value, 0);
+    const widthPercent = clamp((numericValue / scaleMax) * 100, 0, 100);
+    const isOutOfScale = numericValue > scaleMax;
+    return `<div class="spectrum-bar-line ${isOutOfScale ? "out-of-scale" : ""}"><span>${label}</span><div class="spectrum-track"><div class="spectrum-bar ${type}" style="width:${widthPercent}%"></div></div><strong>${formatMeasurement(value, "%")}${isOutOfScale ? '<em>fuera de escala</em>' : ""}</strong></div>`;
+  };
   const spectrum = rowCount > 0
-    ? `<article class="card mini-card wide spectrum-card"><span>Espectro armónico</span><div class="harmonic-spectrum">${harmonicsRows.map(({ harmonicNumber, voltage, current }) => `
+    ? `<article class="card mini-card wide spectrum-card">
+      <span>Espectro armónico</span>
+      <div class="spectrum-scale-list"><span>Escala tensión: 0–${HARMONIC_SCALES.voltage}%</span><span>Escala corriente: 0–${HARMONIC_SCALES.current}%</span></div>
+      <p class="spectrum-note">Las barras están escaladas para facilitar la lectura visual. El valor numérico mostrado es el dato real medido.</p>
+      <div class="harmonic-spectrum">${harmonicsRows.map(({ harmonicNumber, voltage, current }) => `
       <div class="spectrum-row">
         <div class="spectrum-label">${formatHarmonicLabel(harmonicNumber)}</div>
         <div class="spectrum-bars">
-          <div class="spectrum-bar-line"><span>Tensión</span><div class="spectrum-track"><div class="spectrum-bar voltage" style="width:${Math.min(((voltage || 0) / maxValue) * 100, 100)}%"></div></div><strong>${formatMeasurement(voltage, "%")}</strong></div>
-          <div class="spectrum-bar-line"><span>Corriente</span><div class="spectrum-track"><div class="spectrum-bar current" style="width:${Math.min(((current || 0) / maxValue) * 100, 100)}%"></div></div><strong>${formatMeasurement(current, "%")}</strong></div>
+          ${renderSpectrumBar("Tensión", voltage, "voltage")}
+          ${renderSpectrumBar("Corriente", current, "current")}
         </div>
       </div>`).join("")}</div></article>`
     : `<article class="card mini-card wide"><span>Espectro armónico</span><strong>sin dato</strong></article>`;
@@ -678,6 +695,7 @@ function renderAll() {
   renderQualityPanel();
   renderHistoryPanel();
   renderLiveDiagnostics();
+  renderAppDiagnostics();
 }
 
 function renderLiveDiagnostics() {
@@ -720,6 +738,63 @@ function updateConnectionStatus() {
   badge.className = `status-badge ${ok ? "status-ok" : "status-error"}`;
 }
 
+function showUpdateNotice() {
+  const banner = $("updateBanner");
+  if (!banner) return;
+  banner.classList.remove("hidden");
+}
+
+function wireUpdateButtons() {
+  ["updateAppButton", "manualUpdateButton"].forEach((id) => {
+    const button = $(id);
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
+      const registration = await navigator.serviceWorker?.getRegistration();
+      await registration?.update();
+      window.location.reload();
+    });
+  });
+}
+
+async function checkVersionFile() {
+  try {
+    const response = await fetch(VERSION_URL, { cache: "no-store" });
+    if (!response.ok) return;
+    const remote = await response.json();
+    if (remote?.version && remote.version !== APP_VERSION_NUMBER) showUpdateNotice();
+  } catch (error) {
+    console.warn("No se pudo consultar version.json", error);
+  }
+}
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.register("service-worker.js");
+    const applyWaitingUpdate = () => {
+      if (registration.waiting) showUpdateNotice();
+    };
+    registration.addEventListener("updatefound", () => {
+      const worker = registration.installing;
+      worker?.addEventListener("statechange", () => {
+        if (worker.state === "installed" && navigator.serviceWorker.controller) showUpdateNotice();
+      });
+    });
+    navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
+    await registration.update();
+    applyWaitingUpdate();
+    window.setInterval(() => registration.update(), SERVICE_WORKER_UPDATE_INTERVAL_MS);
+  } catch (error) {
+    console.warn("No se pudo registrar service-worker.js", error);
+  }
+}
+
+function renderAppDiagnostics() {
+  if ($("frontVersion")) $("frontVersion").textContent = APP_VERSION;
+  if ($("frontLoadedAt")) $("frontLoadedAt").textContent = formatDateTime(FRONT_LOADED_AT);
+}
+
 function showError(message) {
   const banner = $("errorBanner");
   banner.textContent = message;
@@ -728,6 +803,10 @@ function showError(message) {
 
 async function init() {
   setupNavigation();
+  wireUpdateButtons();
+  registerServiceWorker();
+  checkVersionFile();
+  window.setInterval(checkVersionFile, SERVICE_WORKER_UPDATE_INTERVAL_MS);
   $("consumptionInput").addEventListener("input", renderAll);
   await Promise.all([loadBilling(), loadTariffProfiles()]);
   renderProfileSelector();
